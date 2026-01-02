@@ -1,6 +1,6 @@
-# zcc: JSONL IR → C Cross-Compiler (ZASM toolchain backend)
+# zcc: ZASM JSONL IR → C (native) backend
 
-[![License: GPL-3.0-or-later](https://img.shields.io/badge/License-GPL%203.0-or--later-blue.svg)](https://www.gnu.org/licenses/gpl-3.0-standalone.html)
+[![License: GPL-3.0-or-later](https://img.shields.io/badge/License-GPL%203.0--or--later-blue.svg)](https://www.gnu.org/licenses/gpl-3.0.en.html)
 
 **zcc** is a cross-compiler that translates **ZASM JSONL IR** (emitted by `zas`) into a single, portable C translation unit. The generated C implements the ABI entrypoint (`lembeh_handle`) and can be compiled into a native binary with Clang/GCC. The focus is **determinism**, **auditability**, and **bounds-checked linear memory** — ideal for sandboxed, stream-first programs.
 
@@ -12,7 +12,7 @@
 - **Fast native builds**: emit plain C11 suitable for Clang/GCC optimization.
 - **Cloaks (host runtimes)**: swap in different host implementations (e.g. stdio cloak) without changing program code.
 - **Z80-flavored authoring model**: HL/DE/A/BC/IX registers map cleanly onto efficient C locals.
-- **JSONL contract**: consumes the versioned ZASM IR stream (recommended: `ir: zasm-v1.0`).
+- **JSONL contract**: consumes the versioned ZASM IR stream (required: `"ir":"zasm-v1.0"`).
 
 ## Quick Start
 
@@ -25,7 +25,7 @@
 git clone git@github.com:frogfishio/zcc.git
 cd zcc
 make
-sudo make install  # Optional: Install to /usr/local/bin
+make install  # Optional: Install to /usr/local (may require sudo depending on your setup)
 ```
 
 This builds the `zcc` binary in `./bin/`.
@@ -117,7 +117,7 @@ See [CAPABILITIES.md](CAPABILITIES.md) for development details and the full spec
 
 ## License
 
-This project is licensed under the GPL-3.0-or-later. See [LICENSE](LICENSE) for details (add if missing).
+This project is licensed under the GPL-3.0-or-later. See [LICENSE](LICENSE) for details.
 
 ## Related Projects
 - `zas` — ZASM assembler (text → JSONL IR)
