@@ -1,4 +1,4 @@
-# zcc: ZASM to C Cross-Compiler
+# zcc: JSONL IR → C Cross-Compiler (ZASM toolchain backend)
 
 [![License: GPL-3.0-or-later](https://img.shields.io/badge/License-GPL%203.0-or--later-blue.svg)](https://www.gnu.org/licenses/gpl-3.0-standalone.html)
 
