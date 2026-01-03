@@ -2,6 +2,8 @@
  * SPDX-License-Identifier: GPL-3.0-or-later
  */
 
+#define _POSIX_C_SOURCE 199309L
+
 #include "zprog_rt.h"
 
 #include <errno.h>
@@ -10,6 +12,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <time.h>
 
 #if defined(ZCC_ENABLE_CUDA_RUNTIME)
 #include <cuda.h>
@@ -621,6 +624,7 @@ static int32_t cloak_ctl(void* ctx,
     log_host_msg(host, "_ctl header decode failed");
     return ZCTL_ERR;
   }
+  
   if ((size_t)req_len != ZCTL1_REQ_HEADER_LEN + req.payload_len) {
     log_host_msg(host, "_ctl payload length mismatch");
     return ZCTL_ERR;
@@ -652,6 +656,16 @@ extern int lembeh_handle(int32_t req_handle,
                          zprog_ctl_fn ctl_fn,
                          void* host_ctx,
                          const struct zprog_sys* sys);
+
+/* Get monotonic nanosecond timestamp */
+void _clock_gettime_monotonic_ns(uint64_t* out) {
+  struct timespec ts;
+  if (clock_gettime(CLOCK_MONOTONIC, &ts) == 0) {
+    *out = (uint64_t)ts.tv_sec * 1000000000ULL + (uint64_t)ts.tv_nsec;
+  } else {
+    *out = 0;
+  }
+}
 
 int main(void) {
   struct host_ctx host = {
