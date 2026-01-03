@@ -28,7 +28,8 @@ make
 make install  # Optional: Install to /usr/local (may require sudo depending on your setup)
 ```
 
-This builds the `zcc` binary in `./bin/`.
+This builds the platform binary in `./bin/<platform>/zcc` and provides a
+`./bin/zcc` shim that selects the right platform directory.
 
 ### Basic Usage
 ```bash

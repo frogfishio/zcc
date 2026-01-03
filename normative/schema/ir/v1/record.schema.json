@@ -1,0 +1,229 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://frogfish.io/zasm/schema/ir/v1/record.schema.json",
+  "title": "zasm IR v1 JSONL record",
+  "description": "One JSON object per line (JSONL). Each line must validate against one of the record variants.",
+  "oneOf": [
+    {
+      "$ref": "#/$defs/LabelRecord"
+    },
+    {
+      "$ref": "#/$defs/InstrRecord"
+    },
+    {
+      "$ref": "#/$defs/DirRecord"
+    }
+  ],
+  "$defs": {
+    "Ident": {
+      "type": "string",
+      "minLength": 1,
+      "pattern": "^[A-Za-z_.$][A-Za-z0-9_.$]*$"
+    },
+    "Sym": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "t",
+        "v"
+      ],
+      "properties": {
+        "t": {
+          "const": "sym"
+        },
+        "v": {
+          "$ref": "#/$defs/Ident"
+        }
+      }
+    },
+    "Num": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "t",
+        "v"
+      ],
+      "properties": {
+        "t": {
+          "const": "num"
+        },
+        "v": {
+          "type": "integer"
+        }
+      }
+    },
+    "Str": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "t",
+        "v"
+      ],
+      "properties": {
+        "t": {
+          "const": "str"
+        },
+        "v": {
+          "type": "string"
+        }
+      }
+    },
+    "Mem": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "t",
+        "base"
+      ],
+      "properties": {
+        "t": {
+          "const": "mem"
+        },
+        "base": {
+          "$ref": "#/$defs/Ident"
+        }
+      }
+    },
+    "Operand": {
+      "description": "Instruction operand (typed). v1 keeps this intentionally small.",
+      "oneOf": [
+        {
+          "$ref": "#/$defs/Sym"
+        },
+        {
+          "$ref": "#/$defs/Num"
+        },
+        {
+          "$ref": "#/$defs/Str"
+        },
+        {
+          "$ref": "#/$defs/Mem"
+        }
+      ]
+    },
+    "Arg": {
+      "description": "Directive argument (typed). Same shapes as operands in v1.",
+      "$ref": "#/$defs/Operand"
+    },
+    "Loc": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "line"
+      ],
+      "properties": {
+        "line": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "col": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "unit": {
+          "type": "string",
+          "description": "Optional compilation unit id / filename / namespace hint."
+        }
+      }
+    },
+    "LabelRecord": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "ir",
+        "k",
+        "name"
+      ],
+      "properties": {
+        "ir": {
+          "const": "zasm-v1.0"
+        },
+        "k": {
+          "const": "label"
+        },
+        "name": {
+          "$ref": "#/$defs/Ident"
+        },
+        "loc": {
+          "$ref": "#/$defs/Loc"
+        }
+      }
+    },
+    "InstrRecord": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "ir",
+        "k",
+        "m",
+        "ops"
+      ],
+      "properties": {
+        "ir": {
+          "const": "zasm-v1.0"
+        },
+        "k": {
+          "const": "instr"
+        },
+        "m": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Mnemonic. Recommended uppercase, but not required by schema."
+        },
+        "ops": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/Operand"
+          }
+        },
+        "loc": {
+          "$ref": "#/$defs/Loc"
+        }
+      }
+    },
+    "DirRecord": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "ir",
+        "k",
+        "d",
+        "args"
+      ],
+      "properties": {
+        "ir": {
+          "const": "zasm-v1.0"
+        },
+        "k": {
+          "const": "dir"
+        },
+        "d": {
+          "type": "string",
+          "enum": [
+            "DB",
+            "DW",
+            "RESB",
+            "PUBLIC",
+            "EXTERN",
+            "STR",
+            "EQU"
+          ],
+          "description": "Directive name. v1 supports DB/DW/RESB/STR/EQU/PUBLIC/EXTERN."
+        },
+        "name": {
+          "description": "Optional label associated with this directive (e.g. msg: DB ...).",
+          "$ref": "#/$defs/Ident"
+        },
+        "args": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/Arg"
+          }
+        },
+        "loc": {
+          "$ref": "#/$defs/Loc"
+        }
+      }
+    }
+  }
+}

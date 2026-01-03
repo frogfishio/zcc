@@ -3,6 +3,7 @@
 
 #include "emit_c.h"
 #include <ctype.h>
+#include <limits.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -29,7 +30,7 @@ typedef struct {
 
 typedef struct {
   char* name;
-  long val;
+  int64_t val;
 } gsym_t;
 
 typedef struct {
@@ -142,7 +143,7 @@ static void gsymtab_free(gsymtab_t* g) {
   g->n = g->cap = 0;
 }
 
-static int gsymtab_put(gsymtab_t* g, const char* name, long val, int line) {
+static int gsymtab_put(gsymtab_t* g, const char* name, int64_t val, int line) {
   for (size_t i = 0; i < g->n; i++) {
     if (strcmp(g->v[i].name, name) == 0) {
       fprintf(stderr, "zcc: duplicate symbol %s (line %d)\n", name, line);
@@ -159,7 +160,7 @@ static int gsymtab_put(gsymtab_t* g, const char* name, long val, int line) {
   return 0;
 }
 
-static int gsymtab_get(const gsymtab_t* g, const char* name, long* out) {
+static int gsymtab_get(const gsymtab_t* g, const char* name, int64_t* out) {
   for (size_t i = 0; i < g->n; i++) {
     if (strcmp(g->v[i].name, name) == 0) {
       *out = g->v[i].val;
@@ -297,7 +298,7 @@ static int build_data_and_globals(const recvec_t* recs, datavec_t* data, gsymtab
             cap *= 2;
             buf = (uint8_t*)xrealloc(buf, cap);
           }
-          long v = op->n;
+          int64_t v = op->n;
           if (v < 0) v = 0;
           if (v > 255) v &= 0xff;
           buf[len++] = (uint8_t)v;
@@ -309,7 +310,7 @@ static int build_data_and_globals(const recvec_t* recs, datavec_t* data, gsymtab
       }
       datavec_add(data, r->name, buf, len);
       const data_seg_t* seg = &data->v[data->n - 1];
-      if (gsymtab_put(g, r->name, (long)seg->offset, r->line) != 0) {
+      if (gsymtab_put(g, r->name, (int64_t)seg->offset, r->line) != 0) {
         free(buf);
         return 1;
       }
@@ -322,7 +323,7 @@ static int build_data_and_globals(const recvec_t* recs, datavec_t* data, gsymtab
         return 1;
       }
       if (gsymtab_put(g, r->name, data->next_off, r->line) != 0) return 1;
-      long v = r->args[0].n;
+      int64_t v = r->args[0].n;
       if (v < 0) v = 0;
       data->next_off += (uint32_t)v;
       data->next_off = (data->next_off + 3u) & ~3u;
@@ -360,7 +361,7 @@ static int build_data_and_globals(const recvec_t* recs, datavec_t* data, gsymtab
             cap *= 2;
             buf = (uint8_t*)xrealloc(buf, cap);
           }
-          long v = op->n;
+          int64_t v = op->n;
           if (v < 0) v = 0;
           if (v > 255) v &= 0xff;
           buf[len++] = (uint8_t)v;
@@ -372,13 +373,13 @@ static int build_data_and_globals(const recvec_t* recs, datavec_t* data, gsymtab
       }
       datavec_add(data, r->name, buf, len);
       const data_seg_t* seg = &data->v[data->n - 1];
-      if (gsymtab_put(g, r->name, (long)seg->offset, r->line) != 0) {
+      if (gsymtab_put(g, r->name, (int64_t)seg->offset, r->line) != 0) {
         free(buf);
         return 1;
       }
       char len_name[256];
       snprintf(len_name, sizeof(len_name), "%s_len", r->name);
-      if (gsymtab_put(g, len_name, (long)len, r->line) != 0) {
+      if (gsymtab_put(g, len_name, (int64_t)len, r->line) != 0) {
         free(buf);
         return 1;
       }
@@ -409,13 +410,27 @@ static const char* reg_field(const char* s) {
   return NULL;
 }
 
-static int operand_value(const operand_t* op, const gsymtab_t* g, long* out) {
+static int is_register64(const char* s) {
+  return s && (
+      strcmp(s, "HL") == 0 || strcmp(s, "DE") == 0 ||
+      strcmp(s, "BC") == 0 || strcmp(s, "IX") == 0);
+}
+
+static const char* reg64_field(const char* s) {
+  if (strcmp(s, "HL") == 0) return "state.HL64";
+  if (strcmp(s, "DE") == 0) return "state.DE64";
+  if (strcmp(s, "BC") == 0) return "state.BC64";
+  if (strcmp(s, "IX") == 0) return "state.IX64";
+  return NULL;
+}
+
+static int operand_value(const operand_t* op, const gsymtab_t* g, int64_t* out) {
   if (op->t == JOP_NUM) {
     *out = op->n;
     return 0;
   }
   if (op->t == JOP_SYM) {
-    long v = 0;
+    int64_t v = 0;
     if (!gsymtab_get(g, op->s, &v)) {
       fprintf(stderr, "zcc: unknown symbol %s\n", op->s);
       return 1;
@@ -424,6 +439,62 @@ static int operand_value(const operand_t* op, const gsymtab_t* g, long* out) {
     return 0;
   }
   fprintf(stderr, "zcc: operand must be numeric or symbol\n");
+  return 1;
+}
+
+static int mem_base_value(const operand_t* op, const gsymtab_t* g, int64_t* out) {
+  if (!op || op->t != JOP_MEM || !op->s) {
+    fprintf(stderr, "zcc: mem operand must specify a base symbol\n");
+    return 1;
+  }
+  if (!gsymtab_get(g, op->s, out)) {
+    fprintf(stderr, "zcc: unknown symbol %s\n", op->s);
+    return 1;
+  }
+  return 0;
+}
+
+static int format_i64_operand(const operand_t* op, const gsymtab_t* g, char* buf, size_t cap) {
+  if (op->t == JOP_NUM) {
+    snprintf(buf, cap, "(int64_t)%lld", (long long)op->n);
+    return 0;
+  }
+  if (op->t == JOP_SYM) {
+    if (is_register64(op->s)) {
+      const char* reg = reg64_field(op->s);
+      if (!reg) return 1;
+      snprintf(buf, cap, "%s", reg);
+      return 0;
+    }
+    if (!is_register(op->s)) {
+      int64_t v = 0;
+      if (operand_value(op, g, &v) != 0) return 1;
+      snprintf(buf, cap, "(int64_t)%lld", (long long)v);
+      return 0;
+    }
+  }
+  fprintf(stderr, "zcc: unsupported 64-bit operand\n");
+  return 1;
+}
+
+static int format_i32_operand(const operand_t* op, const gsymtab_t* g, char* buf, size_t cap) {
+  if (op->t == JOP_NUM) {
+    snprintf(buf, cap, "(int32_t)%lld", (long long)op->n);
+    return 0;
+  }
+  if (op->t == JOP_SYM) {
+    if (is_register(op->s)) {
+      const char* reg = reg_field(op->s);
+      if (!reg) return 1;
+      snprintf(buf, cap, "%s", reg);
+      return 0;
+    }
+    int64_t v = 0;
+    if (operand_value(op, g, &v) != 0) return 1;
+    snprintf(buf, cap, "(int32_t)%lld", (long long)v);
+    return 0;
+  }
+  fprintf(stderr, "zcc: unsupported 32-bit operand\n");
   return 1;
 }
 
@@ -469,7 +540,7 @@ static void emit_symbol_enum(const gsymtab_t* g, namemap_t* map, FILE* out) {
   fprintf(out, "enum {\n");
   for (size_t i = 0; i < g->n; i++) {
     const char* cname = namemap_get(map, g->v[i].name, "ZSYM_");
-    fprintf(out, "  %s = %ld,%s\n", cname, g->v[i].val, i + 1 == g->n ? "" : "");
+    fprintf(out, "  %s = %lld,%s\n", cname, (long long)g->v[i].val, i + 1 == g->n ? "" : "");
   }
   fprintf(out, "};\n\n");
 }
@@ -509,9 +580,9 @@ static int emit_instruction(const record_t* r,
         return 1;
       }
       if (src->t == JOP_NUM || (src->t == JOP_SYM && !is_register(src->s))) {
-        long v = 0;
+        int64_t v = 0;
         if (operand_value(src, g, &v) != 0) return 1;
-        fprintf(out, "      %s = %ld;\n", dst_field, v);
+        fprintf(out, "      %s = (int32_t)%lld;\n", dst_field, (long long)v);
       } else if (src->t == JOP_SYM && is_register(src->s)) {
         const char* src_field = reg_field(src->s);
         if (!src_field) {
@@ -561,13 +632,13 @@ static int emit_instruction(const record_t* r,
     const operand_t* rhs = &r->ops[1];
     const char* op = strcmp(m, "ADD") == 0 ? "+" : "-";
     if (rhs->t == JOP_NUM) {
-      fprintf(out, "      state.HL %s= %ld;\n", op, rhs->n);
+      fprintf(out, "      state.HL %s= (int32_t)%lld;\n", op, (long long)rhs->n);
     } else if (rhs->t == JOP_SYM && is_register(rhs->s) && strcmp(rhs->s, "DE") == 0) {
       fprintf(out, "      state.HL %s= state.DE;\n", op);
     } else if (rhs->t == JOP_SYM && !is_register(rhs->s)) {
-      long v = 0;
+      int64_t v = 0;
       if (operand_value(rhs, g, &v) != 0) return 1;
-      fprintf(out, "      state.HL %s= %ld;\n", op, v);
+      fprintf(out, "      state.HL %s= (int32_t)%lld;\n", op, (long long)v);
     } else {
       fprintf(stderr, "zcc: %s unsupported operand (line %d)\n", m, r->line);
       return 1;
@@ -582,14 +653,411 @@ static int emit_instruction(const record_t* r,
     }
     const operand_t* rhs = &r->ops[1];
     if (rhs->t == JOP_NUM) {
-      fprintf(out, "      state.cmp = state.HL - %ld;\n", rhs->n);
+      fprintf(out, "      state.cmp = state.HL - (int32_t)%lld;\n", (long long)rhs->n);
     } else if (rhs->t == JOP_SYM && is_register(rhs->s)) {
       const char* src = reg_field(rhs->s);
       fprintf(out, "      state.cmp = state.HL - %s;\n", src);
     } else {
-      long v = 0;
+      int64_t v = 0;
       if (operand_value(rhs, g, &v) != 0) return 1;
-      fprintf(out, "      state.cmp = state.HL - %ld;\n", v);
+      fprintf(out, "      state.cmp = state.HL - (int32_t)%lld;\n", (long long)v);
+    }
+    fprintf(out, "      pc = %zu;\n      break;\n    }\n", next_pc);
+    return 0;
+  }
+  if (strcmp(m, "LD8S") == 0 || strcmp(m, "LD8U") == 0 ||
+      strcmp(m, "LD16S") == 0 || strcmp(m, "LD16U") == 0 ||
+      strcmp(m, "LD32") == 0) {
+    if (r->nops != 2 || r->ops[0].t != JOP_SYM || !is_register(r->ops[0].s) ||
+        r->ops[1].t != JOP_MEM) {
+      fprintf(stderr, "zcc: %s expects reg, (addr) (line %d)\n", m, r->line);
+      return 1;
+    }
+    const char* dst = reg_field(r->ops[0].s);
+    int64_t addr = 0;
+    if (mem_base_value(&r->ops[1], g, &addr) != 0) return 1;
+    if (addr < 0 || addr > INT32_MAX) {
+      fprintf(stderr, "zcc: %s address out of range (line %d)\n", m, r->line);
+      return 1;
+    }
+    int32_t bytes = 4;
+    if (strcmp(m, "LD8S") == 0 || strcmp(m, "LD8U") == 0) bytes = 1;
+    else if (strcmp(m, "LD16S") == 0 || strcmp(m, "LD16U") == 0) bytes = 2;
+    fprintf(out, "      if (!zprog_bounds((int32_t)%lld, %d)) return ZPROG_TRAP_OOB;\n",
+            (long long)addr, bytes);
+    if (strcmp(m, "LD32") == 0) {
+      fprintf(out, "      %s = (int32_t)zprog_load_u32(state.mem, (int32_t)%lld);\n",
+              dst, (long long)addr);
+    } else if (strcmp(m, "LD8S") == 0) {
+      fprintf(out, "      %s = (int32_t)(int8_t)state.mem[(int32_t)%lld];\n",
+              dst, (long long)addr);
+    } else if (strcmp(m, "LD8U") == 0) {
+      fprintf(out, "      %s = (int32_t)state.mem[(int32_t)%lld];\n",
+              dst, (long long)addr);
+    } else if (strcmp(m, "LD16S") == 0) {
+      fprintf(out, "      %s = (int32_t)(int16_t)zprog_load_u16(state.mem, (int32_t)%lld);\n",
+              dst, (long long)addr);
+    } else {
+      fprintf(out, "      %s = (int32_t)zprog_load_u16(state.mem, (int32_t)%lld);\n",
+              dst, (long long)addr);
+    }
+    fprintf(out, "      pc = %zu;\n      break;\n    }\n", next_pc);
+    return 0;
+  }
+  if (strcmp(m, "ST8") == 0 || strcmp(m, "ST16") == 0 || strcmp(m, "ST32") == 0) {
+    if (r->nops != 2 || r->ops[0].t != JOP_MEM ||
+        r->ops[1].t != JOP_SYM || !is_register(r->ops[1].s)) {
+      fprintf(stderr, "zcc: %s expects (addr), reg (line %d)\n", m, r->line);
+      return 1;
+    }
+    const char* src = reg_field(r->ops[1].s);
+    int64_t addr = 0;
+    if (mem_base_value(&r->ops[0], g, &addr) != 0) return 1;
+    if (addr < 0 || addr > INT32_MAX) {
+      fprintf(stderr, "zcc: %s address out of range (line %d)\n", m, r->line);
+      return 1;
+    }
+    int32_t bytes = 4;
+    if (strcmp(m, "ST8") == 0) bytes = 1;
+    else if (strcmp(m, "ST16") == 0) bytes = 2;
+    fprintf(out, "      if (!zprog_bounds((int32_t)%lld, %d)) return ZPROG_TRAP_OOB;\n",
+            (long long)addr, bytes);
+    if (strcmp(m, "ST8") == 0) {
+      fprintf(out, "      state.mem[(int32_t)%lld] = (uint8_t)(%s & 0xff);\n",
+              (long long)addr, src);
+    } else if (strcmp(m, "ST16") == 0) {
+      fprintf(out, "      zprog_store_u16(state.mem, (int32_t)%lld, (uint16_t)%s);\n",
+              (long long)addr, src);
+    } else {
+      fprintf(out, "      zprog_store_u32(state.mem, (int32_t)%lld, (uint32_t)%s);\n",
+              (long long)addr, src);
+    }
+    fprintf(out, "      pc = %zu;\n      break;\n    }\n", next_pc);
+    return 0;
+  }
+  if (strcmp(m, "CLZ") == 0 || strcmp(m, "CTZ") == 0 || strcmp(m, "POPC") == 0) {
+    if (r->nops != 1 || r->ops[0].t != JOP_SYM || !is_register(r->ops[0].s)) {
+      fprintf(stderr, "zcc: %s expects reg operand (line %d)\n", m, r->line);
+      return 1;
+    }
+    const char* dst = reg_field(r->ops[0].s);
+    if (strcmp(m, "CLZ") == 0) {
+      fprintf(out, "      %s = zprog_clz32((uint32_t)%s);\n", dst, dst);
+    } else if (strcmp(m, "CTZ") == 0) {
+      fprintf(out, "      %s = zprog_ctz32((uint32_t)%s);\n", dst, dst);
+    } else {
+      fprintf(out, "      %s = zprog_popc32((uint32_t)%s);\n", dst, dst);
+    }
+    fprintf(out, "      pc = %zu;\n      break;\n    }\n", next_pc);
+    return 0;
+  }
+  if (strcmp(m, "DROP") == 0) {
+    if (r->nops != 1 || r->ops[0].t != JOP_SYM || !is_register(r->ops[0].s)) {
+      fprintf(stderr, "zcc: DROP expects reg operand (line %d)\n", r->line);
+      return 1;
+    }
+    const char* dst = reg_field(r->ops[0].s);
+    fprintf(out, "      %s = 0;\n", dst);
+    fprintf(out, "      pc = %zu;\n      break;\n    }\n", next_pc);
+    return 0;
+  }
+  if (strcmp(m, "FILL") == 0) {
+    if (r->nops != 0) {
+      fprintf(stderr, "zcc: FILL expects no operands (line %d)\n", r->line);
+      return 1;
+    }
+    fprintf(out, "      if (!zprog_bounds(state.HL, state.BC)) return ZPROG_TRAP_OOB;\n");
+    fprintf(out, "      memset(state.mem + state.HL, (uint8_t)(state.A & 0xff), (size_t)state.BC);\n");
+    fprintf(out, "      pc = %zu;\n      break;\n    }\n", next_pc);
+    return 0;
+  }
+  if (strcmp(m, "LDIR") == 0) {
+    if (r->nops != 0) {
+      fprintf(stderr, "zcc: LDIR expects no operands (line %d)\n", r->line);
+      return 1;
+    }
+    fprintf(out, "      if (!zprog_bounds(state.HL, state.BC)) return ZPROG_TRAP_OOB;\n");
+    fprintf(out, "      if (!zprog_bounds(state.DE, state.BC)) return ZPROG_TRAP_OOB;\n");
+    fprintf(out, "      memmove(state.mem + state.DE, state.mem + state.HL, (size_t)state.BC);\n");
+    fprintf(out, "      pc = %zu;\n      break;\n    }\n", next_pc);
+    return 0;
+  }
+  if (strcmp(m, "ADD") == 0 || strcmp(m, "SUB") == 0 || strcmp(m, "MUL") == 0 ||
+      strcmp(m, "DIVS") == 0 || strcmp(m, "DIVU") == 0 ||
+      strcmp(m, "REMS") == 0 || strcmp(m, "REMU") == 0 ||
+      strcmp(m, "AND") == 0 || strcmp(m, "OR") == 0 || strcmp(m, "XOR") == 0 ||
+      strcmp(m, "EQ") == 0 || strcmp(m, "NE") == 0 ||
+      strcmp(m, "LTS") == 0 || strcmp(m, "LTU") == 0 ||
+      strcmp(m, "LES") == 0 || strcmp(m, "LEU") == 0 ||
+      strcmp(m, "GTS") == 0 || strcmp(m, "GTU") == 0 ||
+      strcmp(m, "GES") == 0 || strcmp(m, "GEU") == 0 ||
+      strcmp(m, "SLA") == 0 || strcmp(m, "SRA") == 0 || strcmp(m, "SRL") == 0 ||
+      strcmp(m, "ROL") == 0 || strcmp(m, "ROR") == 0) {
+    if (r->nops != 2 || r->ops[0].t != JOP_SYM || strcmp(r->ops[0].s, "HL") != 0) {
+      fprintf(stderr, "zcc: %s expects HL destination (line %d)\n", m, r->line);
+      return 1;
+    }
+    char rhs[128];
+    if (format_i32_operand(&r->ops[1], g, rhs, sizeof(rhs)) != 0) return 1;
+    if (strcmp(m, "ADD") == 0) {
+      fprintf(out, "      state.HL += %s;\n", rhs);
+    } else if (strcmp(m, "SUB") == 0) {
+      fprintf(out, "      state.HL -= %s;\n", rhs);
+    } else if (strcmp(m, "MUL") == 0) {
+      fprintf(out, "      state.HL *= %s;\n", rhs);
+    } else if (strcmp(m, "DIVS") == 0) {
+      fprintf(out, "      { int32_t rhs = %s;\n", rhs);
+      fprintf(out, "        if (rhs == 0 || (state.HL == INT32_MIN && rhs == -1)) return ZPROG_TRAP_ARITH;\n");
+      fprintf(out, "        state.HL /= rhs; }\n");
+    } else if (strcmp(m, "DIVU") == 0) {
+      fprintf(out, "      { uint32_t rhs = (uint32_t)(%s);\n", rhs);
+      fprintf(out, "        if (rhs == 0) return ZPROG_TRAP_ARITH;\n");
+      fprintf(out, "        state.HL = (int32_t)((uint32_t)state.HL / rhs); }\n");
+    } else if (strcmp(m, "REMS") == 0) {
+      fprintf(out, "      { int32_t rhs = %s;\n", rhs);
+      fprintf(out, "        if (rhs == 0 || (state.HL == INT32_MIN && rhs == -1)) return ZPROG_TRAP_ARITH;\n");
+      fprintf(out, "        state.HL %%= rhs; }\n");
+    } else if (strcmp(m, "REMU") == 0) {
+      fprintf(out, "      { uint32_t rhs = (uint32_t)(%s);\n", rhs);
+      fprintf(out, "        if (rhs == 0) return ZPROG_TRAP_ARITH;\n");
+      fprintf(out, "        state.HL = (int32_t)((uint32_t)state.HL %% rhs); }\n");
+    } else if (strcmp(m, "AND") == 0) {
+      fprintf(out, "      state.HL &= %s;\n", rhs);
+    } else if (strcmp(m, "OR") == 0) {
+      fprintf(out, "      state.HL |= %s;\n", rhs);
+    } else if (strcmp(m, "XOR") == 0) {
+      fprintf(out, "      state.HL ^= %s;\n", rhs);
+    } else if (strcmp(m, "EQ") == 0) {
+      fprintf(out, "      state.HL = (state.HL == %s) ? 1 : 0;\n", rhs);
+    } else if (strcmp(m, "NE") == 0) {
+      fprintf(out, "      state.HL = (state.HL != %s) ? 1 : 0;\n", rhs);
+    } else if (strcmp(m, "LTS") == 0) {
+      fprintf(out, "      state.HL = (state.HL < %s) ? 1 : 0;\n", rhs);
+    } else if (strcmp(m, "LTU") == 0) {
+      fprintf(out, "      state.HL = ((uint32_t)state.HL < (uint32_t)(%s)) ? 1 : 0;\n", rhs);
+    } else if (strcmp(m, "LES") == 0) {
+      fprintf(out, "      state.HL = (state.HL <= %s) ? 1 : 0;\n", rhs);
+    } else if (strcmp(m, "LEU") == 0) {
+      fprintf(out, "      state.HL = ((uint32_t)state.HL <= (uint32_t)(%s)) ? 1 : 0;\n", rhs);
+    } else if (strcmp(m, "GTS") == 0) {
+      fprintf(out, "      state.HL = (state.HL > %s) ? 1 : 0;\n", rhs);
+    } else if (strcmp(m, "GTU") == 0) {
+      fprintf(out, "      state.HL = ((uint32_t)state.HL > (uint32_t)(%s)) ? 1 : 0;\n", rhs);
+    } else if (strcmp(m, "GES") == 0) {
+      fprintf(out, "      state.HL = (state.HL >= %s) ? 1 : 0;\n", rhs);
+    } else if (strcmp(m, "GEU") == 0) {
+      fprintf(out, "      state.HL = ((uint32_t)state.HL >= (uint32_t)(%s)) ? 1 : 0;\n", rhs);
+    } else if (strcmp(m, "SLA") == 0) {
+      fprintf(out, "      { uint32_t shift = (uint32_t)(%s) & 31u;\n", rhs);
+      fprintf(out, "        uint32_t v = (uint32_t)state.HL;\n");
+      fprintf(out, "        state.HL = (int32_t)(v << shift); }\n");
+    } else if (strcmp(m, "SRA") == 0) {
+      fprintf(out, "      { uint32_t shift = (uint32_t)(%s) & 31u;\n", rhs);
+      fprintf(out, "        int32_t v = state.HL;\n");
+      fprintf(out, "        state.HL = (int32_t)(v >> shift); }\n");
+    } else if (strcmp(m, "SRL") == 0) {
+      fprintf(out, "      { uint32_t shift = (uint32_t)(%s) & 31u;\n", rhs);
+      fprintf(out, "        uint32_t v = (uint32_t)state.HL;\n");
+      fprintf(out, "        state.HL = (int32_t)(v >> shift); }\n");
+    } else if (strcmp(m, "ROL") == 0) {
+      fprintf(out, "      { uint32_t shift = (uint32_t)(%s) & 31u;\n", rhs);
+      fprintf(out, "        uint32_t v = (uint32_t)state.HL;\n");
+      fprintf(out, "        if (shift) v = (v << shift) | (v >> (32 - shift));\n");
+      fprintf(out, "        state.HL = (int32_t)v; }\n");
+    } else if (strcmp(m, "ROR") == 0) {
+      fprintf(out, "      { uint32_t shift = (uint32_t)(%s) & 31u;\n", rhs);
+      fprintf(out, "        uint32_t v = (uint32_t)state.HL;\n");
+      fprintf(out, "        if (shift) v = (v >> shift) | (v << (32 - shift));\n");
+      fprintf(out, "        state.HL = (int32_t)v; }\n");
+    }
+    fprintf(out, "      pc = %zu;\n      break;\n    }\n", next_pc);
+    return 0;
+  }
+  if (strcmp(m, "LD64") == 0 || strcmp(m, "LD8S64") == 0 || strcmp(m, "LD8U64") == 0 ||
+      strcmp(m, "LD16S64") == 0 || strcmp(m, "LD16U64") == 0 ||
+      strcmp(m, "LD32S64") == 0 || strcmp(m, "LD32U64") == 0) {
+    if (r->nops != 2 || r->ops[0].t != JOP_SYM || !is_register64(r->ops[0].s) ||
+        r->ops[1].t != JOP_MEM) {
+      fprintf(stderr, "zcc: %s expects reg64, (addr) (line %d)\n", m, r->line);
+      return 1;
+    }
+    const char* dst = reg64_field(r->ops[0].s);
+    int64_t addr = 0;
+    if (mem_base_value(&r->ops[1], g, &addr) != 0) return 1;
+    if (addr < 0 || addr > INT32_MAX) {
+      fprintf(stderr, "zcc: %s address out of range (line %d)\n", m, r->line);
+      return 1;
+    }
+    int32_t bytes = 8;
+    if (strcmp(m, "LD8S64") == 0 || strcmp(m, "LD8U64") == 0) bytes = 1;
+    else if (strcmp(m, "LD16S64") == 0 || strcmp(m, "LD16U64") == 0) bytes = 2;
+    else if (strcmp(m, "LD32S64") == 0 || strcmp(m, "LD32U64") == 0) bytes = 4;
+    fprintf(out, "      if (!zprog_bounds((int32_t)%lld, %d)) return ZPROG_TRAP_OOB;\n",
+            (long long)addr, bytes);
+    if (strcmp(m, "LD64") == 0) {
+      fprintf(out, "      %s = (int64_t)zprog_load_u64(state.mem, (int32_t)%lld);\n",
+              dst, (long long)addr);
+    } else if (strcmp(m, "LD8S64") == 0) {
+      fprintf(out, "      %s = (int64_t)(int8_t)state.mem[(int32_t)%lld];\n",
+              dst, (long long)addr);
+    } else if (strcmp(m, "LD8U64") == 0) {
+      fprintf(out, "      %s = (int64_t)state.mem[(int32_t)%lld];\n",
+              dst, (long long)addr);
+    } else if (strcmp(m, "LD16S64") == 0) {
+      fprintf(out, "      %s = (int64_t)(int16_t)zprog_load_u16(state.mem, (int32_t)%lld);\n",
+              dst, (long long)addr);
+    } else if (strcmp(m, "LD16U64") == 0) {
+      fprintf(out, "      %s = (int64_t)zprog_load_u16(state.mem, (int32_t)%lld);\n",
+              dst, (long long)addr);
+    } else if (strcmp(m, "LD32S64") == 0) {
+      fprintf(out, "      %s = (int64_t)(int32_t)zprog_load_u32(state.mem, (int32_t)%lld);\n",
+              dst, (long long)addr);
+    } else if (strcmp(m, "LD32U64") == 0) {
+      fprintf(out, "      %s = (int64_t)zprog_load_u32(state.mem, (int32_t)%lld);\n",
+              dst, (long long)addr);
+    }
+    fprintf(out, "      pc = %zu;\n      break;\n    }\n", next_pc);
+    return 0;
+  }
+  if (strcmp(m, "ST64") == 0 || strcmp(m, "ST8_64") == 0 ||
+      strcmp(m, "ST16_64") == 0 || strcmp(m, "ST32_64") == 0) {
+    if (r->nops != 2 || r->ops[0].t != JOP_MEM ||
+        r->ops[1].t != JOP_SYM || !is_register64(r->ops[1].s)) {
+      fprintf(stderr, "zcc: %s expects (addr), reg64 (line %d)\n", m, r->line);
+      return 1;
+    }
+    const char* src = reg64_field(r->ops[1].s);
+    int64_t addr = 0;
+    if (mem_base_value(&r->ops[0], g, &addr) != 0) return 1;
+    if (addr < 0 || addr > INT32_MAX) {
+      fprintf(stderr, "zcc: %s address out of range (line %d)\n", m, r->line);
+      return 1;
+    }
+    int32_t bytes = 8;
+    if (strcmp(m, "ST8_64") == 0) bytes = 1;
+    else if (strcmp(m, "ST16_64") == 0) bytes = 2;
+    else if (strcmp(m, "ST32_64") == 0) bytes = 4;
+    fprintf(out, "      if (!zprog_bounds((int32_t)%lld, %d)) return ZPROG_TRAP_OOB;\n",
+            (long long)addr, bytes);
+    if (strcmp(m, "ST64") == 0) {
+      fprintf(out, "      zprog_store_u64(state.mem, (int32_t)%lld, (uint64_t)%s);\n",
+              (long long)addr, src);
+    } else if (strcmp(m, "ST8_64") == 0) {
+      fprintf(out, "      state.mem[(int32_t)%lld] = (uint8_t)(%s & 0xff);\n",
+              (long long)addr, src);
+    } else if (strcmp(m, "ST16_64") == 0) {
+      fprintf(out, "      zprog_store_u16(state.mem, (int32_t)%lld, (uint16_t)%s);\n",
+              (long long)addr, src);
+    } else if (strcmp(m, "ST32_64") == 0) {
+      fprintf(out, "      zprog_store_u32(state.mem, (int32_t)%lld, (uint32_t)%s);\n",
+              (long long)addr, src);
+    }
+    fprintf(out, "      pc = %zu;\n      break;\n    }\n", next_pc);
+    return 0;
+  }
+  if (strcmp(m, "CLZ64") == 0 || strcmp(m, "CTZ64") == 0 || strcmp(m, "POPC64") == 0) {
+    if (r->nops != 1 || r->ops[0].t != JOP_SYM || !is_register64(r->ops[0].s)) {
+      fprintf(stderr, "zcc: %s expects reg64 operand (line %d)\n", m, r->line);
+      return 1;
+    }
+    const char* dst = reg64_field(r->ops[0].s);
+    if (strcmp(m, "CLZ64") == 0) {
+      fprintf(out, "      %s = (int64_t)zprog_clz64((uint64_t)%s);\n", dst, dst);
+    } else if (strcmp(m, "CTZ64") == 0) {
+      fprintf(out, "      %s = (int64_t)zprog_ctz64((uint64_t)%s);\n", dst, dst);
+    } else {
+      fprintf(out, "      %s = (int64_t)zprog_popc64((uint64_t)%s);\n", dst, dst);
+    }
+    fprintf(out, "      pc = %zu;\n      break;\n    }\n", next_pc);
+    return 0;
+  }
+  if (strcmp(m, "ADD64") == 0 || strcmp(m, "SUB64") == 0 || strcmp(m, "MUL64") == 0 ||
+      strcmp(m, "DIVS64") == 0 || strcmp(m, "DIVU64") == 0 ||
+      strcmp(m, "REMS64") == 0 || strcmp(m, "REMU64") == 0 ||
+      strcmp(m, "AND64") == 0 || strcmp(m, "OR64") == 0 || strcmp(m, "XOR64") == 0 ||
+      strcmp(m, "EQ64") == 0 || strcmp(m, "NE64") == 0 ||
+      strcmp(m, "LTS64") == 0 || strcmp(m, "LTU64") == 0 ||
+      strcmp(m, "LES64") == 0 || strcmp(m, "LEU64") == 0 ||
+      strcmp(m, "GTS64") == 0 || strcmp(m, "GTU64") == 0 ||
+      strcmp(m, "GES64") == 0 || strcmp(m, "GEU64") == 0 ||
+      strcmp(m, "SLA64") == 0 || strcmp(m, "SRA64") == 0 || strcmp(m, "SRL64") == 0 ||
+      strcmp(m, "ROL64") == 0 || strcmp(m, "ROR64") == 0) {
+    if (r->nops != 2 || r->ops[0].t != JOP_SYM || strcmp(r->ops[0].s, "HL") != 0) {
+      fprintf(stderr, "zcc: %s expects HL64 destination (line %d)\n", m, r->line);
+      return 1;
+    }
+    char rhs[128];
+    if (format_i64_operand(&r->ops[1], g, rhs, sizeof(rhs)) != 0) return 1;
+    if (strcmp(m, "ADD64") == 0) {
+      fprintf(out, "      state.HL64 += %s;\n", rhs);
+    } else if (strcmp(m, "SUB64") == 0) {
+      fprintf(out, "      state.HL64 -= %s;\n", rhs);
+    } else if (strcmp(m, "MUL64") == 0) {
+      fprintf(out, "      state.HL64 *= %s;\n", rhs);
+    } else if (strcmp(m, "DIVS64") == 0) {
+      fprintf(out, "      { int64_t rhs = %s;\n", rhs);
+      fprintf(out, "        if (rhs == 0 || (state.HL64 == INT64_MIN && rhs == -1)) return ZPROG_TRAP_ARITH;\n");
+      fprintf(out, "        state.HL64 /= rhs; }\n");
+    } else if (strcmp(m, "DIVU64") == 0) {
+      fprintf(out, "      { uint64_t rhs = (uint64_t)(%s);\n", rhs);
+      fprintf(out, "        if (rhs == 0) return ZPROG_TRAP_ARITH;\n");
+      fprintf(out, "        state.HL64 = (int64_t)((uint64_t)state.HL64 / rhs); }\n");
+    } else if (strcmp(m, "REMS64") == 0) {
+      fprintf(out, "      { int64_t rhs = %s;\n", rhs);
+      fprintf(out, "        if (rhs == 0 || (state.HL64 == INT64_MIN && rhs == -1)) return ZPROG_TRAP_ARITH;\n");
+      fprintf(out, "        state.HL64 %%= rhs; }\n");
+    } else if (strcmp(m, "REMU64") == 0) {
+      fprintf(out, "      { uint64_t rhs = (uint64_t)(%s);\n", rhs);
+      fprintf(out, "        if (rhs == 0) return ZPROG_TRAP_ARITH;\n");
+      fprintf(out, "        state.HL64 = (int64_t)((uint64_t)state.HL64 %% rhs); }\n");
+    } else if (strcmp(m, "AND64") == 0) {
+      fprintf(out, "      state.HL64 &= %s;\n", rhs);
+    } else if (strcmp(m, "OR64") == 0) {
+      fprintf(out, "      state.HL64 |= %s;\n", rhs);
+    } else if (strcmp(m, "XOR64") == 0) {
+      fprintf(out, "      state.HL64 ^= %s;\n", rhs);
+    } else if (strcmp(m, "EQ64") == 0) {
+      fprintf(out, "      state.HL64 = (state.HL64 == %s) ? 1 : 0;\n", rhs);
+    } else if (strcmp(m, "NE64") == 0) {
+      fprintf(out, "      state.HL64 = (state.HL64 != %s) ? 1 : 0;\n", rhs);
+    } else if (strcmp(m, "LTS64") == 0) {
+      fprintf(out, "      state.HL64 = (state.HL64 < %s) ? 1 : 0;\n", rhs);
+    } else if (strcmp(m, "LTU64") == 0) {
+      fprintf(out, "      state.HL64 = ((uint64_t)state.HL64 < (uint64_t)(%s)) ? 1 : 0;\n", rhs);
+    } else if (strcmp(m, "LES64") == 0) {
+      fprintf(out, "      state.HL64 = (state.HL64 <= %s) ? 1 : 0;\n", rhs);
+    } else if (strcmp(m, "LEU64") == 0) {
+      fprintf(out, "      state.HL64 = ((uint64_t)state.HL64 <= (uint64_t)(%s)) ? 1 : 0;\n", rhs);
+    } else if (strcmp(m, "GTS64") == 0) {
+      fprintf(out, "      state.HL64 = (state.HL64 > %s) ? 1 : 0;\n", rhs);
+    } else if (strcmp(m, "GTU64") == 0) {
+      fprintf(out, "      state.HL64 = ((uint64_t)state.HL64 > (uint64_t)(%s)) ? 1 : 0;\n", rhs);
+    } else if (strcmp(m, "GES64") == 0) {
+      fprintf(out, "      state.HL64 = (state.HL64 >= %s) ? 1 : 0;\n", rhs);
+    } else if (strcmp(m, "GEU64") == 0) {
+      fprintf(out, "      state.HL64 = ((uint64_t)state.HL64 >= (uint64_t)(%s)) ? 1 : 0;\n", rhs);
+    } else if (strcmp(m, "SLA64") == 0) {
+      fprintf(out, "      { uint64_t shift = (uint64_t)(%s) & 63u;\n", rhs);
+      fprintf(out, "        uint64_t v = (uint64_t)state.HL64;\n");
+      fprintf(out, "        state.HL64 = (int64_t)(v << shift); }\n");
+    } else if (strcmp(m, "SRA64") == 0) {
+      fprintf(out, "      { uint64_t shift = (uint64_t)(%s) & 63u;\n", rhs);
+      fprintf(out, "        int64_t v = state.HL64;\n");
+      fprintf(out, "        state.HL64 = (int64_t)(v >> shift); }\n");
+    } else if (strcmp(m, "SRL64") == 0) {
+      fprintf(out, "      { uint64_t shift = (uint64_t)(%s) & 63u;\n", rhs);
+      fprintf(out, "        uint64_t v = (uint64_t)state.HL64;\n");
+      fprintf(out, "        state.HL64 = (int64_t)(v >> shift); }\n");
+    } else if (strcmp(m, "ROL64") == 0) {
+      fprintf(out, "      { uint64_t shift = (uint64_t)(%s) & 63u;\n", rhs);
+      fprintf(out, "        uint64_t v = (uint64_t)state.HL64;\n");
+      fprintf(out, "        if (shift) v = (v << shift) | (v >> (64 - shift));\n");
+      fprintf(out, "        state.HL64 = (int64_t)v; }\n");
+    } else if (strcmp(m, "ROR64") == 0) {
+      fprintf(out, "      { uint64_t shift = (uint64_t)(%s) & 63u;\n", rhs);
+      fprintf(out, "        uint64_t v = (uint64_t)state.HL64;\n");
+      fprintf(out, "        if (shift) v = (v >> shift) | (v << (64 - shift));\n");
+      fprintf(out, "        state.HL64 = (int64_t)v; }\n");
     }
     fprintf(out, "      pc = %zu;\n      break;\n    }\n", next_pc);
     return 0;
@@ -742,15 +1210,88 @@ int emit_c_module(const recvec_t* recs, unsigned heap_slack, FILE* out) {
   fprintf(out, "#include <stdint.h>\n#include <stddef.h>\n#include <string.h>\n#include \"zprog_rt.h\"\n\n");
   fprintf(out, "#define ZPROG_MEM_CAP %u\n", mem_cap);
   fprintf(out, "#define ZPROG_RET_STACK_CAP 256\n");
-  fprintf(out, "enum {\n  ZPROG_TRAP_OOB = 1,\n  ZPROG_TRAP_CALL_DEPTH = 2,\n  ZPROG_TRAP_HOST_MISSING = 3,\n  ZPROG_TRAP_HOST_FAIL = 4,\n  ZPROG_TRAP_ALLOC = 5\n};\n\n");
+  fprintf(out, "enum {\n  ZPROG_TRAP_OOB = 1,\n  ZPROG_TRAP_CALL_DEPTH = 2,\n  ZPROG_TRAP_HOST_MISSING = 3,\n  ZPROG_TRAP_HOST_FAIL = 4,\n  ZPROG_TRAP_ALLOC = 5,\n  ZPROG_TRAP_ARITH = 6\n};\n\n");
   fprintf(out, "static inline int zprog_bounds(int32_t addr, int32_t len) {\n");
   fprintf(out, "  if (addr < 0 || len < 0) return 0;\n");
   fprintf(out, "  size_t end = (size_t)addr + (size_t)len;\n");
   fprintf(out, "  return end <= ZPROG_MEM_CAP;\n}\n\n");
+  fprintf(out, "static inline uint16_t zprog_load_u16(const uint8_t* mem, int32_t addr) {\n");
+  fprintf(out, "  return (uint16_t)mem[addr] | ((uint16_t)mem[addr + 1] << 8);\n");
+  fprintf(out, "}\n");
+  fprintf(out, "static inline uint32_t zprog_load_u32(const uint8_t* mem, int32_t addr) {\n");
+  fprintf(out, "  return (uint32_t)mem[addr]\n");
+  fprintf(out, "      | ((uint32_t)mem[addr + 1] << 8)\n");
+  fprintf(out, "      | ((uint32_t)mem[addr + 2] << 16)\n");
+  fprintf(out, "      | ((uint32_t)mem[addr + 3] << 24);\n");
+  fprintf(out, "}\n");
+  fprintf(out, "static inline uint64_t zprog_load_u64(const uint8_t* mem, int32_t addr) {\n");
+  fprintf(out, "  return (uint64_t)mem[addr]\n");
+  fprintf(out, "      | ((uint64_t)mem[addr + 1] << 8)\n");
+  fprintf(out, "      | ((uint64_t)mem[addr + 2] << 16)\n");
+  fprintf(out, "      | ((uint64_t)mem[addr + 3] << 24)\n");
+  fprintf(out, "      | ((uint64_t)mem[addr + 4] << 32)\n");
+  fprintf(out, "      | ((uint64_t)mem[addr + 5] << 40)\n");
+  fprintf(out, "      | ((uint64_t)mem[addr + 6] << 48)\n");
+  fprintf(out, "      | ((uint64_t)mem[addr + 7] << 56);\n");
+  fprintf(out, "}\n");
+  fprintf(out, "static inline void zprog_store_u16(uint8_t* mem, int32_t addr, uint16_t v) {\n");
+  fprintf(out, "  mem[addr] = (uint8_t)(v & 0xff);\n");
+  fprintf(out, "  mem[addr + 1] = (uint8_t)((v >> 8) & 0xff);\n");
+  fprintf(out, "}\n");
+  fprintf(out, "static inline void zprog_store_u32(uint8_t* mem, int32_t addr, uint32_t v) {\n");
+  fprintf(out, "  mem[addr] = (uint8_t)(v & 0xff);\n");
+  fprintf(out, "  mem[addr + 1] = (uint8_t)((v >> 8) & 0xff);\n");
+  fprintf(out, "  mem[addr + 2] = (uint8_t)((v >> 16) & 0xff);\n");
+  fprintf(out, "  mem[addr + 3] = (uint8_t)((v >> 24) & 0xff);\n");
+  fprintf(out, "}\n");
+  fprintf(out, "static inline void zprog_store_u64(uint8_t* mem, int32_t addr, uint64_t v) {\n");
+  fprintf(out, "  mem[addr] = (uint8_t)(v & 0xff);\n");
+  fprintf(out, "  mem[addr + 1] = (uint8_t)((v >> 8) & 0xff);\n");
+  fprintf(out, "  mem[addr + 2] = (uint8_t)((v >> 16) & 0xff);\n");
+  fprintf(out, "  mem[addr + 3] = (uint8_t)((v >> 24) & 0xff);\n");
+  fprintf(out, "  mem[addr + 4] = (uint8_t)((v >> 32) & 0xff);\n");
+  fprintf(out, "  mem[addr + 5] = (uint8_t)((v >> 40) & 0xff);\n");
+  fprintf(out, "  mem[addr + 6] = (uint8_t)((v >> 48) & 0xff);\n");
+  fprintf(out, "  mem[addr + 7] = (uint8_t)((v >> 56) & 0xff);\n");
+  fprintf(out, "}\n");
+  fprintf(out, "static inline int32_t zprog_clz32(uint32_t v) {\n");
+  fprintf(out, "  if (v == 0) return 32;\n");
+  fprintf(out, "  int32_t n = 0;\n");
+  fprintf(out, "  while ((v & (1u << 31)) == 0) { n++; v <<= 1; }\n");
+  fprintf(out, "  return n;\n");
+  fprintf(out, "}\n");
+  fprintf(out, "static inline int32_t zprog_ctz32(uint32_t v) {\n");
+  fprintf(out, "  if (v == 0) return 32;\n");
+  fprintf(out, "  int32_t n = 0;\n");
+  fprintf(out, "  while ((v & 1u) == 0) { n++; v >>= 1; }\n");
+  fprintf(out, "  return n;\n");
+  fprintf(out, "}\n");
+  fprintf(out, "static inline int32_t zprog_popc32(uint32_t v) {\n");
+  fprintf(out, "  int32_t n = 0;\n");
+  fprintf(out, "  while (v) { n += (int32_t)(v & 1u); v >>= 1; }\n");
+  fprintf(out, "  return n;\n");
+  fprintf(out, "}\n");
+  fprintf(out, "static inline int32_t zprog_clz64(uint64_t v) {\n");
+  fprintf(out, "  if (v == 0) return 64;\n");
+  fprintf(out, "  int32_t n = 0;\n");
+  fprintf(out, "  while ((v & (1ULL << 63)) == 0) { n++; v <<= 1; }\n");
+  fprintf(out, "  return n;\n");
+  fprintf(out, "}\n");
+  fprintf(out, "static inline int32_t zprog_ctz64(uint64_t v) {\n");
+  fprintf(out, "  if (v == 0) return 64;\n");
+  fprintf(out, "  int32_t n = 0;\n");
+  fprintf(out, "  while ((v & 1ULL) == 0) { n++; v >>= 1; }\n");
+  fprintf(out, "  return n;\n");
+  fprintf(out, "}\n");
+  fprintf(out, "static inline int32_t zprog_popc64(uint64_t v) {\n");
+  fprintf(out, "  int32_t n = 0;\n");
+  fprintf(out, "  while (v) { n += (int32_t)(v & 1ULL); v >>= 1; }\n");
+  fprintf(out, "  return n;\n");
+  fprintf(out, "}\n\n");
   fprintf(out, "enum { ZPROG_HEAP_BASE = %u };\n\n", data.next_off);
   fprintf(out, "static const uint32_t ZPROG_HEAP_BASE_CONST = ZPROG_HEAP_BASE;\n");
   fprintf(out, "uint32_t zprog_heap_base_value(void) { return ZPROG_HEAP_BASE_CONST; }\n\n");
-  fprintf(out, "struct zprog_state {\n  int32_t HL;\n  int32_t DE;\n  int32_t A;\n  int32_t BC;\n  int32_t IX;\n  int32_t cmp;\n  uint8_t mem[ZPROG_MEM_CAP];\n};\n\n");
+  fprintf(out, "struct zprog_state {\n  int32_t HL;\n  int32_t DE;\n  int32_t A;\n  int32_t BC;\n  int32_t IX;\n  int32_t cmp;\n  int64_t HL64;\n  int64_t DE64;\n  int64_t BC64;\n  int64_t IX64;\n  uint8_t mem[ZPROG_MEM_CAP];\n};\n\n");
   emit_data_segments(&data, out);
   emit_mem_init(&data, out);
   namemap_t symmap;

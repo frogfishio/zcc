@@ -13,6 +13,8 @@ LDFLAGS ?=
 ZASM_ROOT ?= ..
 BUILD     ?= build
 BIN       ?= bin
+PLATFORM  ?= $(shell ./scripts/platform.sh)
+BIN_PLATFORM ?= $(BIN)/$(PLATFORM)
 PREFIX    ?= /usr/local
 BINDIR    ?= $(PREFIX)/bin
 INCLUDEDIR?= $(PREFIX)/include
@@ -34,7 +36,7 @@ all: zcc
 examples: $(BUILD)/ctl_probe_cuda
 
 zcc: $(ZCC_OBJ) | dirs
-	$(CC) $(CFLAGS) $(ZCC_OBJ) -o $(BIN)/zcc $(LDFLAGS)
+	$(CC) $(CFLAGS) $(ZCC_OBJ) -o $(BIN_PLATFORM)/zcc $(LDFLAGS)
 
 $(OBJDIR)/%.o: src/%.c | dirs
 	$(CC) $(CPPFLAGS) $(CFLAGS) -c $< -o $@
@@ -50,7 +52,7 @@ cloak-cuda: | dirs
 
 install: zcc
 	@mkdir -p $(DESTDIR)$(BINDIR)
-	@install -m 0755 $(BIN)/zcc $(DESTDIR)$(BINDIR)/zcc
+	@install -m 0755 $(BIN_PLATFORM)/zcc $(DESTDIR)$(BINDIR)/zcc
 	@mkdir -p $(DESTDIR)$(INCLUDEDIR)
 	@install -m 0644 include/zprog_rt.h $(DESTDIR)$(INCLUDEDIR)/zprog_rt.h
 
@@ -60,7 +62,7 @@ clean:
 # Ensure build directories exist before compiling
 
 dirs:
-	mkdir -p $(BIN) $(OBJDIR) $(CLOAK_OBJDIR) out
+	mkdir -p $(BIN_PLATFORM) $(OBJDIR) $(CLOAK_OBJDIR) out
 
 test: zcc
 	./bin/zcc --version | grep -q "zcc 1.0.0"

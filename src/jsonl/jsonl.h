@@ -3,6 +3,7 @@
 
 #pragma once
 #include <stddef.h>
+#include <stdint.h>
 
 typedef enum {
   JREC_NONE = 0,
@@ -22,7 +23,7 @@ typedef enum {
 typedef struct {
   op_kind_t t;
   char* s;     // for SYM/STR/MEM base (heap-allocated)
-  long n;      // for NUM
+  int64_t n;   // for NUM
 } operand_t;
 
 typedef struct {

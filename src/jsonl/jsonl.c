@@ -2,6 +2,7 @@
 /* SPDX-License-Identifier: GPL-3.0-or-later */
 
 #include "jsonl.h"
+#include <stdint.h>
 #include <stdlib.h>
 #include <string.h>
 #include <stdio.h>
@@ -95,13 +96,13 @@ static char* parse_json_string(const char** p) {
   return out;
 }
 
-static long parse_json_int(const char** p, int* ok) {
+static int64_t parse_json_int(const char** p, int* ok) {
   const char* s = *p;
   s = skip_ws(s);
   int neg = 0;
   if (*s == '-') { neg = 1; s++; }
   if (!isdigit((unsigned char)*s)) { *ok = 0; return 0; }
-  long v = 0;
+  int64_t v = 0;
   while (isdigit((unsigned char)*s)) {
     v = v * 10 + (*s - '0');
     s++;
@@ -137,7 +138,7 @@ static int parse_loc_line(const char* line) {
   if (!p) return -1;
   p += strlen("\"loc\":{\"line\":");
   int ok = 0;
-  long v = parse_json_int(&p, &ok);
+  int64_t v = parse_json_int(&p, &ok);
   return ok ? (int)v : -1;
 }
 
