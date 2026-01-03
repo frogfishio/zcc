@@ -256,6 +256,8 @@ cc -Iinclude program.c cloak/stdio_cloak.c -o program
 2. Provide alloc/free if needed
 3. Call `lembeh_handle()` with appropriate args
 
+For a strictly stdio-focused host see `cloak/stdio_cloak.c`; for a `_ctl`-heavy host that speaks the ZCTL/1 kernel backplane see `cloak/cloak_cuda.c`.
+
 ## Testing
 
 ### Unit Tests

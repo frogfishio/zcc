@@ -20,14 +20,14 @@ INCLUDEDIR?= $(PREFIX)/include
 OBJDIR      := $(BUILD)/obj
 CLOAK_OBJDIR:= $(BUILD)/cloak
 
-override CPPFLAGS += -Isrc -Isrc/jsonl -Iinclude
+override CPPFLAGS += -Isrc -Isrc/jsonl -Inormative -Iinclude -I.
 
 ZCC_OBJ := \
 	$(OBJDIR)/main.o \
 	$(OBJDIR)/emit_c.o \
 	$(OBJDIR)/jsonl.o
 
-.PHONY: all zcc clean dirs install cloak-stdio test
+.PHONY: all zcc clean dirs install cloak-stdio cloak-cuda test
 
 all: zcc
 
@@ -42,6 +42,9 @@ $(OBJDIR)/jsonl.o: src/jsonl/jsonl.c | dirs
 
 cloak-stdio: | dirs
 	$(CC) $(CPPFLAGS) $(CFLAGS) -Iinclude -c cloak/stdio_cloak.c -o $(CLOAK_OBJDIR)/stdio_cloak.o
+
+cloak-cuda: | dirs
+	$(CC) $(CPPFLAGS) $(CFLAGS) -Iinclude -c cloak/cloak_cuda.c -o $(CLOAK_OBJDIR)/cloak_cuda.o
 
 install: zcc
 	@mkdir -p $(DESTDIR)$(BINDIR)

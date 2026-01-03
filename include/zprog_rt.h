@@ -6,7 +6,7 @@
 #include <stddef.h>
 #include <stdint.h>
 
-#include "../zing_abi_pack_v1/cloak_abi.h"
+#include "zing_abi_pack_v1/cloak_abi.h"
 
 typedef zcap_req_read_fn  zprog_in_fn;
 typedef zcap_res_write_fn zprog_out_fn;

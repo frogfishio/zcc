@@ -81,7 +81,7 @@ ZASM text → zas → JSONL IR → zcc → C → clang/gcc (+ cloak) → native 
 - **Input**: JSONL records from `zas` (labels, instructions, directives).
 - **Output**: a single C translation unit implementing the program and ABI glue.
 - **Runtime header**: `include/zprog_rt.h` defines the ABI surface and shared types.
-- **Cloaks**: host-specific implementations (e.g. `cloak/stdio_cloak.c` for stdio I/O).
+- **Cloaks**: host-specific implementations (e.g. `cloak/stdio_cloak.c` for stdio I/O, `cloak/cloak_cuda.c` for the CUDA/ZCTL/1 control plane).
 
 ### Memory Model
 - Linear `uint8_t mem[ZPROG_MEM_CAP]` buffer (compile-time constant, cloak/runtime controlled).
@@ -102,6 +102,12 @@ The sample [`examples/ctl_probe.jsonl`](examples/ctl_probe.jsonl) exercises `_ct
 cc -Iinclude build/ctl_probe.c cloak/stdio_cloak.c -o build/ctl_probe
 ./build/ctl_probe
 ```
+
+### CUDA cloak (preview)
+
+`cloak/cloak_cuda.c` wires the standard Lembeh entrypoint to the normative ZCTL/1 kernel backplane. It currently exposes capability and kernel listings plus a stubbed `KERNEL_RUN` path that will forward to the CUDA driver once available. Build the object with `make cloak-cuda` (or compile manually with the same flags used for `cloak-stdio`).
+
+On a CUDA-enabled host you can finish the GPU plumbing by rebuilding with `-DZCC_ENABLE_CUDA_RUNTIME` and extending `cuda_backend_init()` / `handle_kernel_run()` as described in [docs/CLOAK_CUDA.md](docs/CLOAK_CUDA.md).
 
 ## Testing
 
