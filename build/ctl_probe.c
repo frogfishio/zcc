@@ -4,7 +4,7 @@
 #include <string.h>
 #include "zprog_rt.h"
 
-#define ZPROG_MEM_CAP 65640
+#define ZPROG_MEM_CAP 65680
 #define ZPROG_RET_STACK_CAP 256
 enum {
   ZPROG_TRAP_OOB = 1,
@@ -20,7 +20,7 @@ static inline int zprog_bounds(int32_t addr, int32_t len) {
   return end <= ZPROG_MEM_CAP;
 }
 
-enum { ZPROG_HEAP_BASE = 104 };
+enum { ZPROG_HEAP_BASE = 144 };
 
 static const uint32_t ZPROG_HEAP_BASE_CONST = ZPROG_HEAP_BASE;
 uint32_t zprog_heap_base_value(void) { return ZPROG_HEAP_BASE_CONST; }
@@ -36,8 +36,8 @@ struct zprog_state {
 };
 
 static const uint8_t zprog_seg_0[] = {
-  0x5a, 0x43, 0x4c, 0x31, 0x01, 0x00, 0x01, 0x00, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 
-  0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00
+  0x5a, 0x43, 0x54, 0x4c, 0x01, 0x00, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 
+  0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00
 };
 
 static const uint8_t zprog_seg_1[] = {
@@ -46,16 +46,16 @@ static const uint8_t zprog_seg_1[] = {
 
 static void zprog_state_init(struct zprog_state* state) {
   memset(state, 0, sizeof(*state));
-  memcpy(state->mem + 0, zprog_seg_0, 24);
-  memcpy(state->mem + 88, zprog_seg_1, 13);
+  memcpy(state->mem + 0, zprog_seg_0, 32);
+  memcpy(state->mem + 128, zprog_seg_1, 13);
 }
 
 enum {
   ZSYM_req_caps = 0,
-  ZSYM_req_caps_len = 24,
-  ZSYM_resp_buf = 24,
-  ZSYM_resp_buf_len = 64,
-  ZSYM_msg_caps = 88,
+  ZSYM_req_caps_len = 32,
+  ZSYM_resp_buf = 32,
+  ZSYM_resp_buf_len = 96,
+  ZSYM_msg_caps = 128,
   ZSYM_msg_caps_len = 13,
 };
 
@@ -85,17 +85,17 @@ int lembeh_handle(int32_t req_handle,
       break;
     }
     case 1: { /* line -1 LD */
-      state.DE = 24;
+      state.DE = 32;
       pc = 2;
       break;
     }
     case 2: { /* line -1 LD */
-      state.BC = 24;
+      state.BC = 32;
       pc = 3;
       break;
     }
     case 3: { /* line -1 LD */
-      state.IX = 64;
+      state.IX = 96;
       pc = 4;
       break;
     }
@@ -115,7 +115,7 @@ int lembeh_handle(int32_t req_handle,
       break;
     }
     case 6: { /* line -1 LD */
-      state.HL = 88;
+      state.HL = 128;
       pc = 7;
       break;
     }

@@ -1,11 +1,14 @@
 /* SPDX-FileCopyrightText: 2025 Frogfish */
 /* SPDX-License-Identifier: GPL-3.0-or-later */
 
+#define _POSIX_C_SOURCE 200809L
+
 #include "emit_c.h"
 #include "jsonl.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <sys/types.h>
 
 static void usage(FILE* out) {
   fprintf(out, "usage: zcc [--version] [--heap-slack=N] [--output=file.c]\n");

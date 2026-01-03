@@ -27,9 +27,11 @@ ZCC_OBJ := \
 	$(OBJDIR)/emit_c.o \
 	$(OBJDIR)/jsonl.o
 
-.PHONY: all zcc clean dirs install cloak-stdio cloak-cuda test
+.PHONY: all zcc clean dirs install cloak-stdio cloak-cuda test test-cuda-cloak examples
 
 all: zcc
+
+examples: $(BUILD)/ctl_probe_cuda
 
 zcc: $(ZCC_OBJ) | dirs
 	$(CC) $(CFLAGS) $(ZCC_OBJ) -o $(BIN)/zcc $(LDFLAGS)
@@ -44,7 +46,7 @@ cloak-stdio: | dirs
 	$(CC) $(CPPFLAGS) $(CFLAGS) -Iinclude -c cloak/stdio_cloak.c -o $(CLOAK_OBJDIR)/stdio_cloak.o
 
 cloak-cuda: | dirs
-	$(CC) $(CPPFLAGS) $(CFLAGS) -Iinclude -c cloak/cloak_cuda.c -o $(CLOAK_OBJDIR)/cloak_cuda.o
+	$(CC) $(CPPFLAGS) $(CFLAGS) -DZCC_ENABLE_CUDA_RUNTIME -Iinclude -c cloak/cloak_cuda.c -o $(CLOAK_OBJDIR)/cloak_cuda.o
 
 install: zcc
 	@mkdir -p $(DESTDIR)$(BINDIR)
@@ -64,3 +66,14 @@ test: zcc
 	./bin/zcc --version | grep -q "zcc 1.0.0"
 	echo "" | ./bin/zcc > /dev/null
 	@echo "All tests passed"
+
+test-cuda-cloak: $(BUILD)/ctl_probe_cuda
+	@echo "Running CUDA cloak test..."
+	./$(BUILD)/ctl_probe_cuda | grep -q "Caps list ok"
+	@echo "CUDA cloak test passed"
+
+$(BUILD)/ctl_probe.c: examples/ctl_probe.jsonl zcc | dirs
+	./bin/zcc --output $@ < $<
+
+$(BUILD)/ctl_probe_cuda: $(BUILD)/ctl_probe.c cloak/cloak_cuda.c normative/zing_zctl1_kernel_backplane_pack_v1/c/zctl1.c | dirs cloak-cuda
+	$(CC) -Iinclude -Inormative $(BUILD)/ctl_probe.c cloak/cloak_cuda.c normative/zing_zctl1_kernel_backplane_pack_v1/c/zctl1.c -o $@ -L/usr/lib/x86_64-linux-gnu -lcuda -ldl -lpthread

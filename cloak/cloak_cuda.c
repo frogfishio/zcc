@@ -11,18 +11,91 @@
 #include <stdlib.h>
 #include <string.h>
 
+#if defined(ZCC_ENABLE_CUDA_RUNTIME)
+#include <cuda.h>
+#endif
+
 #include "../normative/zing_zctl1_kernel_backplane_pack_v1/c/zctl1.h"
+
+#if defined(ZCC_ENABLE_CUDA_RUNTIME)
+static void format_cuda_error(char* dst, size_t dst_len, CUresult res, const char* step) {
+  const char* name = NULL;
+  const char* desc = NULL;
+  if (cuGetErrorName(res, &name) != CUDA_SUCCESS || !name) name = "CUDA_ERROR";
+  if (cuGetErrorString(res, &desc) != CUDA_SUCCESS || !desc) desc = "(no detail)";
+  snprintf(dst, dst_len, "%s failed: %s (%s)", step ? step : "CUDA call", name, desc);
+}
+#endif
 
 struct cuda_kernel_meta {
   uint32_t id;
   const char* name;
   uint64_t sig_hash;
   uint32_t flags;
+  const char* ptx_code;
+#if defined(ZCC_ENABLE_CUDA_RUNTIME)
+  CUmodule module;
+  CUfunction function;
+#endif
 };
 
-static const struct cuda_kernel_meta CUDA_KERNELS[] = {
-  { 1u, "noop",        0x0000000000000000ull, 0u },
-  { 2u, "tensor_add",  0x00000000000000A1ull, 0u },
+/* Simple noop kernel PTX */
+static const char KERNEL_NOOP_PTX[] = 
+".version 7.0\n"
+".target sm_50\n"
+".address_size 64\n"
+".visible .entry noop() {\n"
+"  ret;\n"
+"}\n";
+
+/* Simple vector add kernel PTX */
+static const char KERNEL_ADD_PTX[] = 
+".version 7.0\n"
+".target sm_50\n"
+".address_size 64\n"
+".visible .entry tensor_add(\n"
+"  .param .u64 tensor_add_param_0,\n"
+"  .param .u64 tensor_add_param_1,\n"
+"  .param .u64 tensor_add_param_2,\n"
+"  .param .u32 tensor_add_param_3\n"
+") {\n"
+"  .reg .pred %p<2>;\n"
+"  .reg .b32 %r<6>;\n"
+"  .reg .f32 %f<4>;\n"
+"  .reg .b64 %rd<11>;\n"
+"  ld.param.u64 %rd1, [tensor_add_param_0];\n"
+"  ld.param.u64 %rd2, [tensor_add_param_1];\n"
+"  ld.param.u64 %rd3, [tensor_add_param_2];\n"
+"  ld.param.u32 %r2, [tensor_add_param_3];\n"
+"  mov.u32 %r3, %ntid.x;\n"
+"  mov.u32 %r4, %ctaid.x;\n"
+"  mov.u32 %r5, %tid.x;\n"
+"  mad.lo.s32 %r1, %r3, %r4, %r5;\n"
+"  setp.ge.s32 %p1, %r1, %r2;\n"
+"  @%p1 bra $L__BB0_2;\n"
+"  cvta.to.global.u64 %rd4, %rd1;\n"
+"  mul.wide.s32 %rd5, %r1, 4;\n"
+"  add.s64 %rd6, %rd4, %rd5;\n"
+"  cvta.to.global.u64 %rd7, %rd2;\n"
+"  add.s64 %rd8, %rd7, %rd5;\n"
+"  ld.global.f32 %f1, [%rd8];\n"
+"  ld.global.f32 %f2, [%rd6];\n"
+"  add.f32 %f3, %f2, %f1;\n"
+"  cvta.to.global.u64 %rd9, %rd3;\n"
+"  add.s64 %rd10, %rd9, %rd5;\n"
+"  st.global.f32 [%rd10], %f3;\n"
+"$L__BB0_2:\n"
+"  ret;\n"
+"}\n";
+
+static struct cuda_kernel_meta CUDA_KERNELS[] = {
+#if defined(ZCC_ENABLE_CUDA_RUNTIME)
+  { 1u, "noop",        0x0000000000000000ull, 0u, KERNEL_NOOP_PTX, NULL, NULL },
+  { 2u, "tensor_add",  0x00000000000000A1ull, 0u, KERNEL_ADD_PTX, NULL, NULL },
+#else
+  { 1u, "noop",        0x0000000000000000ull, 0u, KERNEL_NOOP_PTX },
+  { 2u, "tensor_add",  0x00000000000000A1ull, 0u, KERNEL_ADD_PTX },
+#endif
 };
 
 struct cuda_capability_meta {
@@ -39,6 +112,13 @@ struct cuda_backend {
   int initialized;
   int available;
   char last_error[256];
+#if defined(ZCC_ENABLE_CUDA_RUNTIME)
+  CUcontext context;
+  CUdevice device;
+  int device_count;
+  int has_context;
+  int kernels_loaded;
+#endif
 };
 
 struct host_ctx {
@@ -56,15 +136,109 @@ struct heap_ctx {
 static void cuda_backend_init(struct cuda_backend* backend) {
   if (!backend) return;
   memset(backend, 0, sizeof(*backend));
+  fprintf(stderr, "[cloak] Initializing CUDA backend...\n");
+  fflush(stderr);
 #if defined(ZCC_ENABLE_CUDA_RUNTIME)
-  /* TODO: wire CUDA driver initialization when building on a CUDA host. */
+  CUresult res = cuInit(0);
+  fprintf(stderr, "[cloak] cuInit returned %d\n", res);
+  fflush(stderr);
+  if (res != CUDA_SUCCESS) {
+    snprintf(backend->last_error, sizeof(backend->last_error), "cuInit failed with code %d", res);
+    fprintf(stderr, "[cloak] %s\n", backend->last_error);
+    backend->initialized = 1;
+    return;
+  }
+
+  int device_count = 0;
+  res = cuDeviceGetCount(&device_count);
+  fprintf(stderr, "[cloak] Device count: %d (res=%d)\n", device_count, res);
+  if (res != CUDA_SUCCESS || device_count <= 0) {
+    if (res != CUDA_SUCCESS) {
+      snprintf(backend->last_error, sizeof(backend->last_error), "cuDeviceGetCount failed with code %d", res);
+    } else {
+      snprintf(backend->last_error, sizeof(backend->last_error), "No CUDA devices detected");
+    }
+    backend->initialized = 1;
+    return;
+  }
+
+  backend->device_count = device_count;
+  res = cuDeviceGet(&backend->device, 0);
+  if (res != CUDA_SUCCESS) {
+    snprintf(backend->last_error, sizeof(backend->last_error), "cuDeviceGet failed with code %d", res);
+    backend->initialized = 1;
+    return;
+  }
+
+  res = cuCtxCreate(&backend->context, 0, backend->device);
+  fprintf(stderr, "[cloak] cuCtxCreate returned %d\n", res);
+  if (res != CUDA_SUCCESS) {
+    snprintf(backend->last_error, sizeof(backend->last_error), "cuCtxCreate failed with code %d", res);
+    backend->initialized = 1;
+    return;
+  }
+
+  backend->has_context = 1;
+  
+  fprintf(stderr, "[cloak] Loading %zu CUDA kernels...\n", sizeof(CUDA_KERNELS) / sizeof(CUDA_KERNELS[0]));
+  
+  /* Load kernel modules */
+  for (size_t i = 0; i < sizeof(CUDA_KERNELS) / sizeof(CUDA_KERNELS[0]); i++) {
+    struct cuda_kernel_meta* k = &CUDA_KERNELS[i];
+    if (!k->ptx_code) continue;
+    
+    fprintf(stderr, "[cloak] Loading kernel %u (%s)...\n", k->id, k->name);
+    
+    res = cuModuleLoadDataEx(&k->module, k->ptx_code, 0, NULL, NULL);
+    if (res != CUDA_SUCCESS) {
+      format_cuda_error(backend->last_error, sizeof(backend->last_error), res, "cuModuleLoadDataEx");
+      fprintf(stderr, "[cloak] Module load failed: %s\n", backend->last_error);
+      backend->initialized = 1;
+      return;
+    }
+    
+    res = cuModuleGetFunction(&k->function, k->module, k->name);
+    if (res != CUDA_SUCCESS) {
+      format_cuda_error(backend->last_error, sizeof(backend->last_error), res, "cuModuleGetFunction");
+      fprintf(stderr, "[cloak] Function lookup failed: %s\n", backend->last_error);
+      cuModuleUnload(k->module);
+      backend->initialized = 1;
+      return;
+    }
+    
+    fprintf(stderr, "[cloak] Kernel %s loaded successfully\n", k->name);
+  }
+  
+  backend->kernels_loaded = 1;
   backend->available = 1;
-  snprintf(backend->last_error, sizeof(backend->last_error), "CUDA runtime hooks pending implementation");
+  backend->last_error[0] = '\0';
 #else
   snprintf(backend->last_error, sizeof(backend->last_error),
            "CUDA backend disabled; rebuild with ZCC_ENABLE_CUDA_RUNTIME on a CUDA host");
 #endif
   backend->initialized = 1;
+}
+
+static void cuda_backend_shutdown(struct cuda_backend* backend) {
+#if defined(ZCC_ENABLE_CUDA_RUNTIME)
+  if (!backend) return;
+  if (backend->kernels_loaded) {
+    for (size_t i = 0; i < sizeof(CUDA_KERNELS) / sizeof(CUDA_KERNELS[0]); i++) {
+      if (CUDA_KERNELS[i].module) {
+        cuModuleUnload(CUDA_KERNELS[i].module);
+        CUDA_KERNELS[i].module = NULL;
+        CUDA_KERNELS[i].function = NULL;
+      }
+    }
+    backend->kernels_loaded = 0;
+  }
+  if (backend->has_context) {
+    cuCtxDestroy(backend->context);
+    backend->has_context = 0;
+  }
+#else
+  (void)backend;
+#endif
 }
 
 static int32_t cloak_alloc(void* ctx, uint8_t* mem, size_t mem_cap, int32_t size) {
@@ -82,6 +256,11 @@ static void cloak_free(void* ctx, uint8_t* mem, size_t mem_cap, int32_t ptr) {
   (void)mem;
   (void)mem_cap;
   (void)ptr;
+}
+
+static void log_host_msg(struct host_ctx* host, const char* msg) {
+  if (!host || !host->log || !msg) return;
+  fprintf(host->log, "[cloak] %s\n", msg);
 }
 
 static int32_t cloak_in(void* ctx,
@@ -113,7 +292,10 @@ static int32_t cloak_out(void* ctx,
   size_t want = (size_t)len;
   if ((size_t)ptr + want > mem_cap) return -1;
   size_t wrote = fwrite(mem + ptr, 1, want, host->out);
-  if (wrote != want) return -1;
+  if (wrote != want) {
+    log_host_msg(host, "stdout write failed");
+    return -1;
+  }
   fflush(host->out);
   return (int32_t)wrote;
 }
@@ -266,6 +448,27 @@ static int32_t respond_kernel_run_stub(const zctl1_req_header* req,
   return clamp_i32(total);
 }
 
+static int32_t respond_kernel_run_success(const zctl1_req_header* req,
+                                          uint8_t* resp,
+                                          size_t resp_cap) {
+  size_t payload_len = sizeof(zctl1_kernel_run_resp);
+  size_t total = ZCTL1_RESP_HEADER_LEN + payload_len;
+  if (resp_cap < total) return ZCTL_ERR;
+
+  zctl1_resp_header rh;
+  zctl1_init_resp_from_req(&rh, req);
+  rh.status = ZCTL1_OK;
+  rh.payload_len = (uint32_t)payload_len;
+  if (zctl1_encode_resp_header(resp, resp_cap, &rh) != 0) return ZCTL_ERR;
+
+  zctl1_kernel_run_resp body;
+  body.ok = 1;
+  body.err_code = 0;
+  body.err_msg_len = 0;
+  memcpy(resp + ZCTL1_RESP_HEADER_LEN, &body, sizeof(body));
+  return clamp_i32(total);
+}
+
 static int32_t handle_kernel_run(const zctl1_req_header* req,
                                  const uint8_t* payload,
                                  size_t payload_len,
@@ -279,18 +482,108 @@ static int32_t handle_kernel_run(const zctl1_req_header* req,
     return respond_kernel_run_stub(req, resp, resp_cap, "args truncated", ZCTL1_ERR_MALFORMED);
   }
 
-  const struct cuda_kernel_meta* kernel = find_kernel(run->kernel_id);
+  struct cuda_kernel_meta* kernel = NULL;
+  for (size_t i = 0; i < sizeof(CUDA_KERNELS) / sizeof(CUDA_KERNELS[0]); i++) {
+    if (CUDA_KERNELS[i].id == run->kernel_id) {
+      kernel = &CUDA_KERNELS[i];
+      break;
+    }
+  }
   if (!kernel) {
     return respond_kernel_run_stub(req, resp, resp_cap, "kernel id not found", ZCTL1_ERR_BAD_ARGS);
   }
 
-  (void)host;
-  const char* err = host && host->backend.available
-                      ? "CUDA backend hooks not implemented yet"
-                      : host && host->backend.initialized
-                          ? host->backend.last_error
-                          : "CUDA backend unavailable";
-  return respond_kernel_run_stub(req, resp, resp_cap, err, ZCTL1_ERR_BACKEND);
+  if (!host || !host->backend.available) {
+    const char* err = host && host->backend.initialized
+                        ? host->backend.last_error
+                        : "CUDA backend unavailable";
+    return respond_kernel_run_stub(req, resp, resp_cap, err, ZCTL1_ERR_BACKEND);
+  }
+
+#if defined(ZCC_ENABLE_CUDA_RUNTIME)
+  /* Execute kernel */
+  const zctl1_arg* args = (const zctl1_arg*)(payload + sizeof(zctl1_kernel_run_req));
+  
+  fprintf(stderr, "[cloak] Executing kernel %u with %u args\n", kernel->id, run->arg_count);
+  fflush(stderr);
+  
+  /* Simple execution for noop kernel (no args) */
+  if (kernel->id == 1u && run->arg_count == 0) {
+    fprintf(stderr, "[cloak] Launching noop kernel...\n");
+    fflush(stderr);
+    CUresult res = cuLaunchKernel(kernel->function, 1, 1, 1, 1, 1, 1, 0, NULL, NULL, NULL);
+    fprintf(stderr, "[cloak] cuLaunchKernel returned %d\n", res);
+    fflush(stderr);
+    if (res != CUDA_SUCCESS) {
+      char err_buf[256];
+      format_cuda_error(err_buf, sizeof(err_buf), res, "cuLaunchKernel(noop)");
+      return respond_kernel_run_stub(req, resp, resp_cap, err_buf, ZCTL1_ERR_BACKEND);
+    }
+    cuCtxSynchronize();
+    return respond_kernel_run_success(req, resp, resp_cap);
+  }
+  
+  /* For tensor_add: expect 3 buffer args (a, b, c) + 1 scalar (n) */
+  if (kernel->id == 2u && run->arg_count == 4) {
+    void* kernel_args[4];
+    CUdeviceptr dev_ptrs[3] = {0};
+    int allocated_count = 0;
+    
+    /* Allocate device memory for 3 float arrays */
+    for (int i = 0; i < 3; i++) {
+      if (args[i].kind != ZCTL1_ARG_U32) {
+        for (int j = 0; j < allocated_count; j++) cuMemFree(dev_ptrs[j]);
+        return respond_kernel_run_stub(req, resp, resp_cap, "expected u32 size args", ZCTL1_ERR_BAD_ARGS);
+      }
+      size_t buf_size = args[i].a * sizeof(float);
+      CUresult res = cuMemAlloc(&dev_ptrs[i], buf_size);
+      if (res != CUDA_SUCCESS) {
+        for (int j = 0; j < allocated_count; j++) cuMemFree(dev_ptrs[j]);
+        return respond_kernel_run_stub(req, resp, resp_cap, "cuMemAlloc failed", ZCTL1_ERR_NO_MEM);
+      }
+      allocated_count++;
+      
+      /* Initialize inputs with test data */
+      if (i < 2) {
+        float* host_buf = (float*)malloc(buf_size);
+        if (host_buf) {
+          for (size_t k = 0; k < args[i].a; k++) host_buf[k] = (float)(i + 1) * (k + 1);
+          cuMemcpyHtoD(dev_ptrs[i], host_buf, buf_size);
+          free(host_buf);
+        }
+      }
+      kernel_args[i] = &dev_ptrs[i];
+    }
+    
+    /* Fourth arg is element count */
+    uint32_t n = args[3].a;
+    kernel_args[3] = &n;
+    
+    /* Launch kernel */
+    unsigned int block_size = 256;
+    unsigned int grid_size = (n + block_size - 1) / block_size;
+    CUresult res = cuLaunchKernel(kernel->function,
+                                  grid_size, 1, 1,
+                                  block_size, 1, 1,
+                                  0, NULL, kernel_args, NULL);
+    cuCtxSynchronize();
+    
+    /* Cleanup */
+    for (int i = 0; i < 3; i++) cuMemFree(dev_ptrs[i]);
+    
+    if (res != CUDA_SUCCESS) {
+      char err_buf[256];
+      format_cuda_error(err_buf, sizeof(err_buf), res, "cuLaunchKernel(tensor_add)");
+      return respond_kernel_run_stub(req, resp, resp_cap, err_buf, ZCTL1_ERR_BACKEND);
+    }
+    
+    return respond_kernel_run_success(req, resp, resp_cap);
+  }
+  
+  return respond_kernel_run_stub(req, resp, resp_cap, "unsupported kernel/args combination", ZCTL1_ERR_BAD_ARGS);
+#else
+  return respond_kernel_run_stub(req, resp, resp_cap, "CUDA runtime disabled", ZCTL1_ERR_BACKEND);
+#endif
 }
 
 static int32_t cloak_ctl(void* ctx,
@@ -305,15 +598,33 @@ static int32_t cloak_ctl(void* ctx,
   (void)ctl_handle;
   (void)timeout_ms;
   struct host_ctx* host = (struct host_ctx*)ctx;
-  if (!mem) return ZCTL_ERR;
-  if (!in_bounds(mem_cap, req_ptr, req_len)) return ZCTL_ERR;
-  if (!in_bounds(mem_cap, resp_ptr, resp_cap)) return ZCTL_ERR;
-  if (req_len < (int32_t)ZCTL1_REQ_HEADER_LEN) return ZCTL_ERR;
+  if (!mem) {
+    log_host_msg(host, "_ctl missing memory pointer");
+    return ZCTL_ERR;
+  }
+  if (!in_bounds(mem_cap, req_ptr, req_len)) {
+    log_host_msg(host, "_ctl request buffer OOB");
+    return ZCTL_ERR;
+  }
+  if (!in_bounds(mem_cap, resp_ptr, resp_cap)) {
+    log_host_msg(host, "_ctl response buffer OOB");
+    return ZCTL_ERR;
+  }
+  if (req_len < (int32_t)ZCTL1_REQ_HEADER_LEN) {
+    log_host_msg(host, "_ctl header truncated");
+    return ZCTL_ERR;
+  }
 
   const uint8_t* req_buf = mem + (size_t)req_ptr;
   zctl1_req_header req;
-  if (zctl1_decode_req_header(&req, req_buf, (size_t)req_len) != 0) return ZCTL_ERR;
-  if ((size_t)req_len != ZCTL1_REQ_HEADER_LEN + req.payload_len) return ZCTL_ERR;
+  if (zctl1_decode_req_header(&req, req_buf, (size_t)req_len) != 0) {
+    log_host_msg(host, "_ctl header decode failed");
+    return ZCTL_ERR;
+  }
+  if ((size_t)req_len != ZCTL1_REQ_HEADER_LEN + req.payload_len) {
+    log_host_msg(host, "_ctl payload length mismatch");
+    return ZCTL_ERR;
+  }
 
   uint8_t* resp = mem + (size_t)resp_ptr;
   const uint8_t* payload = req_buf + ZCTL1_REQ_HEADER_LEN;
@@ -358,13 +669,15 @@ int main(void) {
     .free_fn = cloak_free
   };
 
-  return lembeh_handle(ZCAP_IN,
-                       ZCAP_OUT,
-                       cloak_in,
-                       cloak_out,
-                       cloak_end,
-                       cloak_log,
-                       cloak_ctl,
-                       &host,
-                       &sys);
+  int rc = lembeh_handle(ZCAP_IN,
+                         ZCAP_OUT,
+                         cloak_in,
+                         cloak_out,
+                         cloak_end,
+                         cloak_log,
+                         cloak_ctl,
+                         &host,
+                         &sys);
+  cuda_backend_shutdown(&host.backend);
+  return rc;
 }

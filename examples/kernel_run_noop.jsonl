@@ -1,0 +1,16 @@
+{"ir":"zasm-v1.0","k":"dir","d":"DB","name":"req_run_noop","args":[{"t":"num","v":90},{"t":"num","v":67},{"t":"num","v":84},{"t":"num","v":76},{"t":"num","v":1},{"t":"num","v":0},{"t":"num","v":2},{"t":"num","v":1},{"t":"num","v":0},{"t":"num","v":0},{"t":"num","v":0},{"t":"num","v":0},{"t":"num","v":2},{"t":"num","v":0},{"t":"num","v":0},{"t":"num","v":0},{"t":"num","v":16},{"t":"num","v":0},{"t":"num","v":0},{"t":"num","v":0},{"t":"num","v":0},{"t":"num","v":0},{"t":"num","v":0},{"t":"num","v":0},{"t":"num","v":0},{"t":"num","v":0},{"t":"num","v":0},{"t":"num","v":0},{"t":"num","v":0},{"t":"num","v":0},{"t":"num","v":0},{"t":"num","v":0},{"t":"num","v":1},{"t":"num","v":0},{"t":"num","v":0},{"t":"num","v":0},{"t":"num","v":0},{"t":"num","v":0},{"t":"num","v":0},{"t":"num","v":0},{"t":"num","v":0},{"t":"num","v":0},{"t":"num","v":0},{"t":"num","v":0},{"t":"num","v":0},{"t":"num","v":0},{"t":"num","v":0},{"t":"num","v":0}]}
+{"ir":"zasm-v1.0","k":"dir","d":"DW","name":"req_run_noop_len","args":[{"t":"num","v":48}]}
+{"ir":"zasm-v1.0","k":"dir","d":"RESB","name":"resp_buf","args":[{"t":"num","v":96}]}
+{"ir":"zasm-v1.0","k":"dir","d":"DW","name":"resp_buf_len","args":[{"t":"num","v":96}]}
+{"ir":"zasm-v1.0","k":"dir","d":"STR","name":"msg_ok","args":[{"t":"str","v":"Noop kernel executed\n"}]}
+{"ir":"zasm-v1.0","k":"label","name":"main"}
+{"ir":"zasm-v1.0","k":"instr","m":"LD","ops":[{"t":"sym","v":"HL"},{"t":"sym","v":"req_run_noop"}]}
+{"ir":"zasm-v1.0","k":"instr","m":"LD","ops":[{"t":"sym","v":"DE"},{"t":"sym","v":"req_run_noop_len"}]}
+{"ir":"zasm-v1.0","k":"instr","m":"LD","ops":[{"t":"sym","v":"BC"},{"t":"sym","v":"resp_buf"}]}
+{"ir":"zasm-v1.0","k":"instr","m":"LD","ops":[{"t":"sym","v":"IX"},{"t":"sym","v":"resp_buf_len"}]}
+{"ir":"zasm-v1.0","k":"instr","m":"LD","ops":[{"t":"sym","v":"A"},{"t":"num","v":0}]}
+{"ir":"zasm-v1.0","k":"instr","m":"CALL","ops":[{"t":"sym","v":"_ctl"}]}
+{"ir":"zasm-v1.0","k":"instr","m":"LD","ops":[{"t":"sym","v":"HL"},{"t":"sym","v":"msg_ok"}]}
+{"ir":"zasm-v1.0","k":"instr","m":"LD","ops":[{"t":"sym","v":"DE"},{"t":"sym","v":"msg_ok_len"}]}
+{"ir":"zasm-v1.0","k":"instr","m":"CALL","ops":[{"t":"sym","v":"_out"}]}
+{"ir":"zasm-v1.0","k":"instr","m":"RET","ops":[]}
