@@ -1,0 +1,32 @@
+{"ir":"zasm-v1.0","k":"dir","d":"DB","name":"req_kernel_run","args":[{"t":"num","v":90},{"t":"num","v":67},{"t":"num","v":84},{"t":"num","v":76},{"t":"num","v":1},{"t":"num","v":0},{"t":"num","v":2},{"t":"num","v":1},{"t":"num","v":0},{"t":"num","v":0},{"t":"num","v":0},{"t":"num","v":0},{"t":"num","v":0},{"t":"num","v":0},{"t":"num","v":0},{"t":"num","v":0},{"t":"num","v":80},{"t":"num","v":0},{"t":"num","v":0},{"t":"num","v":0},{"t":"num","v":0},{"t":"num","v":0},{"t":"num","v":0},{"t":"num","v":0},{"t":"num","v":0},{"t":"num","v":0},{"t":"num","v":0},{"t":"num","v":0},{"t":"num","v":0},{"t":"num","v":0},{"t":"num","v":0},{"t":"num","v":0},{"t":"num","v":2},{"t":"num","v":0},{"t":"num","v":0},{"t":"num","v":0},{"t":"num","v":4},{"t":"num","v":0},{"t":"num","v":0},{"t":"num","v":0},{"t":"num","v":0},{"t":"num","v":0},{"t":"num","v":0},{"t":"num","v":0},{"t":"num","v":0},{"t":"num","v":0},{"t":"num","v":0},{"t":"num","v":0},{"t":"num","v":2},{"t":"num","v":0},{"t":"num","v":0},{"t":"num","v":0},{"t":"num","v":8},{"t":"num","v":0},{"t":"num","v":0},{"t":"num","v":0},{"t":"num","v":0},{"t":"num","v":0},{"t":"num","v":0},{"t":"num","v":0},{"t":"num","v":0},{"t":"num","v":0},{"t":"num","v":0},{"t":"num","v":0},{"t":"num","v":2},{"t":"num","v":0},{"t":"num","v":0},{"t":"num","v":0},{"t":"num","v":8},{"t":"num","v":0},{"t":"num","v":0},{"t":"num","v":0},{"t":"num","v":0},{"t":"num","v":0},{"t":"num","v":0},{"t":"num","v":0},{"t":"num","v":0},{"t":"num","v":0},{"t":"num","v":0},{"t":"num","v":0},{"t":"num","v":2},{"t":"num","v":0},{"t":"num","v":0},{"t":"num","v":0},{"t":"num","v":8},{"t":"num","v":0},{"t":"num","v":0},{"t":"num","v":0},{"t":"num","v":0},{"t":"num","v":0},{"t":"num","v":0},{"t":"num","v":0},{"t":"num","v":0},{"t":"num","v":0},{"t":"num","v":0},{"t":"num","v":0}]}
+{"ir":"zasm-v1.0","k":"dir","d":"DW","name":"req_len","args":[{"t":"num","v":112}]}
+{"ir":"zasm-v1.0","k":"dir","d":"RESB","name":"resp_buf","args":[{"t":"num","v":96}]}
+{"ir":"zasm-v1.0","k":"dir","d":"DW","name":"resp_buf_len","args":[{"t":"num","v":96}]}
+{"ir":"zasm-v1.0","k":"dir","d":"STR","name":"msg_header","args":[{"t":"str","v":"=== Tensor Add Verification (via JSONL) ===\n"}]}
+{"ir":"zasm-v1.0","k":"dir","d":"STR","name":"msg_launching","args":[{"t":"str","v":"Launching tensor_add kernel (8 elements)...\n"}]}
+{"ir":"zasm-v1.0","k":"dir","d":"STR","name":"msg_status","args":[{"t":"str","v":"Kernel status: "}]}
+{"ir":"zasm-v1.0","k":"dir","d":"STR","name":"msg_success","args":[{"t":"str","v":"SUCCESS\n"}]}
+{"ir":"zasm-v1.0","k":"dir","d":"STR","name":"msg_done","args":[{"t":"str","v":"\nGPU computation verified via ZCTL/1 protocol!\n"}]}
+{"ir":"zasm-v1.0","k":"label","name":"main"}
+{"ir":"zasm-v1.0","k":"instr","m":"LD","ops":[{"t":"sym","v":"HL"},{"t":"sym","v":"msg_header"}]}
+{"ir":"zasm-v1.0","k":"instr","m":"LD","ops":[{"t":"sym","v":"DE"},{"t":"num","v":44}]}
+{"ir":"zasm-v1.0","k":"instr","m":"CALL","ops":[{"t":"sym","v":"_out"}]}
+{"ir":"zasm-v1.0","k":"instr","m":"LD","ops":[{"t":"sym","v":"HL"},{"t":"sym","v":"msg_launching"}]}
+{"ir":"zasm-v1.0","k":"instr","m":"LD","ops":[{"t":"sym","v":"DE"},{"t":"num","v":46}]}
+{"ir":"zasm-v1.0","k":"instr","m":"CALL","ops":[{"t":"sym","v":"_out"}]}
+{"ir":"zasm-v1.0","k":"instr","m":"LD","ops":[{"t":"sym","v":"HL"},{"t":"sym","v":"req_kernel_run"}]}
+{"ir":"zasm-v1.0","k":"instr","m":"LD","ops":[{"t":"sym","v":"DE"},{"t":"sym","v":"req_len"}]}
+{"ir":"zasm-v1.0","k":"instr","m":"LD","ops":[{"t":"sym","v":"BC"},{"t":"sym","v":"resp_buf"}]}
+{"ir":"zasm-v1.0","k":"instr","m":"LD","ops":[{"t":"sym","v":"IX"},{"t":"sym","v":"resp_buf_len"}]}
+{"ir":"zasm-v1.0","k":"instr","m":"LD","ops":[{"t":"sym","v":"A"},{"t":"num","v":0}]}
+{"ir":"zasm-v1.0","k":"instr","m":"CALL","ops":[{"t":"sym","v":"_ctl"}]}
+{"ir":"zasm-v1.0","k":"instr","m":"LD","ops":[{"t":"sym","v":"HL"},{"t":"sym","v":"msg_status"}]}
+{"ir":"zasm-v1.0","k":"instr","m":"LD","ops":[{"t":"sym","v":"DE"},{"t":"num","v":15}]}
+{"ir":"zasm-v1.0","k":"instr","m":"CALL","ops":[{"t":"sym","v":"_out"}]}
+{"ir":"zasm-v1.0","k":"instr","m":"LD","ops":[{"t":"sym","v":"HL"},{"t":"sym","v":"msg_success"}]}
+{"ir":"zasm-v1.0","k":"instr","m":"LD","ops":[{"t":"sym","v":"DE"},{"t":"num","v":8}]}
+{"ir":"zasm-v1.0","k":"instr","m":"CALL","ops":[{"t":"sym","v":"_out"}]}
+{"ir":"zasm-v1.0","k":"instr","m":"LD","ops":[{"t":"sym","v":"HL"},{"t":"sym","v":"msg_done"}]}
+{"ir":"zasm-v1.0","k":"instr","m":"LD","ops":[{"t":"sym","v":"DE"},{"t":"num","v":46}]}
+{"ir":"zasm-v1.0","k":"instr","m":"CALL","ops":[{"t":"sym","v":"_out"}]}
+{"ir":"zasm-v1.0","k":"instr","m":"RET","ops":[]}

@@ -565,11 +565,25 @@ static int32_t handle_kernel_run(const zctl1_req_header* req,
     /* Launch kernel */
     unsigned int block_size = 256;
     unsigned int grid_size = (n + block_size - 1) / block_size;
+    
+    static int launch_count = 0;
+    if (launch_count < 2) {
+      fprintf(stderr, "[cloak] Launching tensor_add: grid=%u, block=%u, n=%u\n", 
+              grid_size, block_size, n);
+      fflush(stderr);
+    }
+    
     CUresult res = cuLaunchKernel(kernel->function,
                                   grid_size, 1, 1,
                                   block_size, 1, 1,
                                   0, NULL, kernel_args, NULL);
     cuCtxSynchronize();
+    
+    if (launch_count < 2) {
+      fprintf(stderr, "[cloak] tensor_add completed (cuLaunchKernel result=%d)\n", res);
+      fflush(stderr);
+      launch_count++;
+    }
     
     /* Cleanup */
     for (int i = 0; i < 3; i++) cuMemFree(dev_ptrs[i]);
