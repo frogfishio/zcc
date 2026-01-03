@@ -65,8 +65,14 @@ dirs:
 	mkdir -p $(BIN_PLATFORM) $(OBJDIR) $(CLOAK_OBJDIR) out
 
 test: zcc
+	set -e
 	./bin/zcc --version | grep -q "zcc 1.0.0"
 	echo "" | ./bin/zcc > /dev/null
+	./bin/zcc --output $(BUILD)/mnemonic_smoke.c < examples/mnemonic_smoke.jsonl
+	$(CC) -Iinclude -Inormative -c $(BUILD)/mnemonic_smoke.c -o $(BUILD)/mnemonic_smoke.o
+	$(CC) -Iinclude -Inormative -c examples/mnemonic_smoke_host.c -o $(BUILD)/mnemonic_smoke_host.o
+	$(CC) $(BUILD)/mnemonic_smoke.o $(BUILD)/mnemonic_smoke_host.o -o $(BUILD)/mnemonic_smoke
+	./$(BUILD)/mnemonic_smoke > /dev/null
 	@echo "All tests passed"
 
 test-cuda-cloak: $(BUILD)/ctl_probe_cuda
