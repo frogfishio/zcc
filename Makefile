@@ -20,7 +20,7 @@ INCLUDEDIR?= $(PREFIX)/include
 OBJDIR      := $(BUILD)/obj
 CLOAK_OBJDIR:= $(BUILD)/cloak
 
-override CPPFLAGS += -Isrc -Iinclude
+override CPPFLAGS += -Isrc -Isrc/jsonl -Iinclude
 
 ZCC_OBJ := \
 	$(OBJDIR)/main.o \

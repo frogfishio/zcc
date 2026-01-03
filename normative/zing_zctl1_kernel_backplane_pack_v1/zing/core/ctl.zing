@@ -1,0 +1,11 @@
+;; core/ctl.zing — `_ctl` wrapper surface (example)
+module core ctl.
+
+export ZCTL_ERR[ ret -1 ].
+
+export extern ctl(i32, i32, i32, i32, i32, i32) → i32.
+;; (ctl_handle, req_ptr, req_len, resp_ptr, resp_cap, timeout_ms) -> nbytes or -1
+
+export ctlCall handle: reqPtr: reqLen: respPtr: respCap: timeoutMs: [
+  ret (ctl handle reqPtr reqLen respPtr respCap timeoutMs)
+].

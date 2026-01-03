@@ -1,0 +1,20 @@
+;; core/gpu.zing — example ZCTL/1 kernel backplane client (shape only)
+module core gpu.
+
+use core buffer.
+use core ctl.
+
+export struct TensorDesc {
+  dtype: u32,
+  rank: u32,
+  flags: u32,
+  dataOff: u32,
+  dataLen: u32,
+  shapeOff: u32,
+  strideOff: u32,
+  reserved: u32
+}.
+
+export capsList reqPtr: reqLen: respPtr: respCap: timeoutMs: [
+  ret (ctlCall handle: 4 reqPtr: reqPtr reqLen: reqLen respPtr: respPtr respCap: respCap timeoutMs: timeoutMs)
+].

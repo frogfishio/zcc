@@ -56,13 +56,15 @@ int lembeh_handle(int32_t req_handle,
                   int32_t res_handle,
                   zprog_in_fn in_fn,
                   zprog_out_fn out_fn,
+                  zprog_end_fn end_fn,
                   zprog_log_fn log_fn,
+                  zprog_ctl_fn ctl_fn,
                   void* host_ctx,
                   const struct zprog_sys* sys);
 ```
 
 - **req_handle/res_handle**: Opaque handles for request/response (unused in stdio cloak)
-- **in_fn/out_fn/log_fn**: Host I/O callbacks
+- **in_fn/out_fn/end_fn/log_fn/ctl_fn**: Host I/O callbacks that match `cloak_abi.h`
 - **host_ctx**: Host-specific context
 - **sys**: System primitives (alloc/free)
 - **Return**: 0 on success, nonzero on trap
@@ -91,6 +93,12 @@ typedef int32_t (*zprog_out_fn)(void* ctx,
 ```
 Writes `len` bytes from `mem[ptr..ptr+len]`, returns bytes written or negative on error.
 
+#### End/Close
+```c
+typedef void (*zprog_end_fn)(void* ctx, int32_t res_handle);
+```
+Marks a handle as ended. Hosts must make this idempotent; subsequent writes to the handle should fail.
+
 #### Logging
 ```c
 typedef void (*zprog_log_fn)(void* ctx,
@@ -103,17 +111,33 @@ typedef void (*zprog_log_fn)(void* ctx,
 ```
 Logs a message with topic and body from memory slices.
 
+#### Control Plane
+```c
+typedef int32_t (*zprog_ctl_fn)(void* ctx,
+                                int32_t ctl_handle,
+                                uint8_t* mem,
+                                size_t mem_cap,
+                                int32_t req_ptr,
+                                int32_t req_len,
+                                int32_t resp_ptr,
+                                int32_t resp_cap,
+                                int32_t timeout_ms);
+```
+Executes the `_ctl` backplane call. Returns the number of bytes written to the response buffer (or `ZCTL_*` codes on failure/timeout).
+
 ### System Primitives
 ```c
 struct zprog_sys {
   void* ctx;
-  int32_t (*alloc_fn)(void* ctx, uint8_t* mem, size_t mem_cap, int32_t size);
-  void (*free_fn)(void* ctx, uint8_t* mem, size_t mem_cap, int32_t ptr);
+  zcap_alloc_fn alloc_fn;
+  zcap_free_fn  free_fn;
 };
 ```
 
 - **alloc_fn**: Allocates `size` bytes from heap, returns pointer or negative
 - **free_fn**: Frees memory at `ptr` (no-op in simple cloaks)
+
+These typedefs mirror the canonical `zcap_*` signatures declared in `zing_abi_pack_v1/cloak_abi.h`.
 
 ### Trap Codes
 - `ZPROG_TRAP_OOB = 1`: Out-of-bounds memory access
@@ -144,9 +168,11 @@ zcc supports a subset of Z80-inspired instructions:
 ### Host Calls
 - `CALL _in`: Read input
 - `CALL _out`: Write output
+- `CALL _end`: End/close a handle (load handle id into `HL`; defaults to `res_handle` when negative)
 - `CALL _log`: Log message
 - `CALL _alloc`: Allocate memory
 - `CALL _free`: Free memory
+- `CALL _ctl`: Invoke the control plane (pass request pointer/len in `HL/DE`, response pointer/len in `BC/IX`, timeout in `A`)
 
 ### Directives
 - `DB bytes...`: Define byte data

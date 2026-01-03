@@ -647,11 +647,28 @@ static int emit_instruction(const record_t* r,
       fprintf(out, "      pc = %zu;\n      break;\n    }\n", next_pc);
       return 0;
     }
+    if (strcmp(sym, "_end") == 0) {
+      fprintf(out, "      if (!end_fn) return ZPROG_TRAP_HOST_MISSING;\n");
+      fprintf(out, "      int32_t end_handle = state.HL >= 0 ? state.HL : res_handle;\n");
+      fprintf(out, "      end_fn(host_ctx, end_handle);\n");
+      fprintf(out, "      pc = %zu;\n      break;\n    }\n", next_pc);
+      return 0;
+    }
     if (strcmp(sym, "_log") == 0) {
       fprintf(out, "      if (!log_fn) return ZPROG_TRAP_HOST_MISSING;\n");
       fprintf(out, "      if (!zprog_bounds(state.HL, state.DE)) return ZPROG_TRAP_OOB;\n");
       fprintf(out, "      if (!zprog_bounds(state.BC, state.IX)) return ZPROG_TRAP_OOB;\n");
       fprintf(out, "      log_fn(host_ctx, state.mem, ZPROG_MEM_CAP, state.HL, state.DE, state.BC, state.IX);\n");
+      fprintf(out, "      pc = %zu;\n      break;\n    }\n", next_pc);
+      return 0;
+    }
+    if (strcmp(sym, "_ctl") == 0) {
+      fprintf(out, "      if (!ctl_fn) return ZPROG_TRAP_HOST_MISSING;\n");
+      fprintf(out, "      if (!zprog_bounds(state.HL, state.DE)) return ZPROG_TRAP_OOB;\n");
+      fprintf(out, "      if (!zprog_bounds(state.BC, state.IX)) return ZPROG_TRAP_OOB;\n");
+      fprintf(out, "      int32_t ctl_written = ctl_fn(host_ctx, ZCAP_CTL, state.mem, ZPROG_MEM_CAP, state.HL, state.DE, state.BC, state.IX, state.A);\n");
+      fprintf(out, "      if (ctl_written < 0) return ZPROG_TRAP_HOST_FAIL;\n");
+      fprintf(out, "      state.HL = ctl_written;\n");
       fprintf(out, "      pc = %zu;\n      break;\n    }\n", next_pc);
       return 0;
     }
@@ -740,9 +757,11 @@ int emit_c_module(const recvec_t* recs, unsigned heap_slack, FILE* out) {
   namemap_init(&symmap);
   emit_symbol_enum(&g, &symmap, out);
 
-  fprintf(out, "int lembeh_handle(int32_t req_handle,\n                  int32_t res_handle,\n                  zprog_in_fn in_fn,\n                  zprog_out_fn out_fn,\n                  zprog_log_fn log_fn,\n                  void* host_ctx,\n                  const struct zprog_sys* sys) {\n");
+  fprintf(out, "int lembeh_handle(int32_t req_handle,\n                  int32_t res_handle,\n                  zprog_in_fn in_fn,\n                  zprog_out_fn out_fn,\n                  zprog_end_fn end_fn,\n                  zprog_log_fn log_fn,\n                  zprog_ctl_fn ctl_fn,\n                  void* host_ctx,\n                  const struct zprog_sys* sys) {\n");
   fprintf(out, "  (void)out_fn; /* may be unused */\n");
+  fprintf(out, "  (void)end_fn;\n");
   fprintf(out, "  (void)log_fn;\n");
+  fprintf(out, "  (void)ctl_fn;\n");
   fprintf(out, "  struct zprog_state state;\n  zprog_state_init(&state);\n");
   fprintf(out, "  int32_t pc = 0;\n  int32_t ret_stack[ZPROG_RET_STACK_CAP];\n  int32_t sp = 0;\n  for (;;) {\n    switch (pc) {\n");
 

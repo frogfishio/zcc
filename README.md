@@ -89,11 +89,19 @@ ZASM text → zas → JSONL IR → zcc → C → clang/gcc (+ cloak) → native 
 - All memory accesses are bounds-checked in generated C (hard error/trap on violation).
 
 ### ABI
-The ABI provides host callbacks for I/O, allocation, and logging. Programs interact via `lembeh_handle`, passing request/response handles.
+The ABI provides host callbacks for streaming I/O, allocation, logging, handle finalization, and the `_ctl` control plane. Programs interact via `lembeh_handle`, passing request/response handles plus the callback table declared in `zing_abi_pack_v1/cloak_abi.h`.
 
 ## Examples
 
 See the `examples/` directory for small end-to-end programs and golden tests. The recommended workflow is to assemble `.zasm` to JSONL with `zas`, then compile to C with `zcc`, then link with a cloak.
+
+The sample [`examples/ctl_probe.jsonl`](examples/ctl_probe.jsonl) exercises `_ctl` by issuing a `CAPS_LIST` request and printing a confirmation message. Run it end-to-end with:
+
+```bash
+./bin/zcc --output build/ctl_probe.c < examples/ctl_probe.jsonl
+cc -Iinclude build/ctl_probe.c cloak/stdio_cloak.c -o build/ctl_probe
+./build/ctl_probe
+```
 
 ## Testing
 
