@@ -1,0 +1,2 @@
+{"ir":"zasm-v1.0","k":"label","name":"main"}
+{"ir":"zasm-v1.0","k":"instr","m":"ADD","ops":[{"t":"sym","v":"A"},{"t":"num","v":1}]}

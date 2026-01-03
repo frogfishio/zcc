@@ -1,0 +1,4 @@
+{"ir":"zasm-v1.0","k":"label","name":"main"}
+{"ir":"zasm-v1.0","k":"instr","m":"LD","ops":[{"t":"sym","v":"HL"},{"t":"num","v":10}]}
+{"ir":"zasm-v1.0","k":"instr","m":"DIVS","ops":[{"t":"sym","v":"HL"},{"t":"num","v":0}]}
+{"ir":"zasm-v1.0","k":"instr","m":"RET","ops":[]}

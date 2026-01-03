@@ -73,6 +73,7 @@ test: zcc
 	$(CC) -Iinclude -Inormative -c examples/mnemonic_smoke_host.c -o $(BUILD)/mnemonic_smoke_host.o
 	$(CC) $(BUILD)/mnemonic_smoke.o $(BUILD)/mnemonic_smoke_host.o -o $(BUILD)/mnemonic_smoke
 	./$(BUILD)/mnemonic_smoke > /dev/null
+	./scripts/error_tests.sh
 	@echo "All tests passed"
 
 test-cuda-cloak: $(BUILD)/ctl_probe_cuda

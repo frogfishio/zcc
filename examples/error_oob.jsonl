@@ -1,0 +1,7 @@
+{"ir":"zasm-v1.0","k":"dir","d":"EQU","name":"bad_ptr","args":[{"t":"num","v":70000}]}
+{"ir":"zasm-v1.0","k":"label","name":"main"}
+{"ir":"zasm-v1.0","k":"instr","m":"LD","ops":[{"t":"sym","v":"HL"},{"t":"sym","v":"bad_ptr"}]}
+{"ir":"zasm-v1.0","k":"instr","m":"LD","ops":[{"t":"sym","v":"DE"},{"t":"sym","v":"bad_ptr"}]}
+{"ir":"zasm-v1.0","k":"instr","m":"LD","ops":[{"t":"sym","v":"BC"},{"t":"num","v":2}]}
+{"ir":"zasm-v1.0","k":"instr","m":"LDIR","ops":[]}
+{"ir":"zasm-v1.0","k":"instr","m":"RET","ops":[]}
