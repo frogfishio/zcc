@@ -90,7 +90,7 @@ ZASM text → zas → JSONL IR → zcc → C → clang/gcc (+ cloak) → native 
 - All memory accesses are bounds-checked in generated C (hard error/trap on violation).
 
 ### ABI
-The ABI provides host callbacks for streaming I/O, allocation, logging, handle finalization, and the `_ctl` control plane. Programs interact via `lembeh_handle`, passing request/response handles plus the callback table declared in `zing_abi_pack_v1/cloak_abi.h`.
+The ABI provides host callbacks for streaming I/O, allocation, logging, handle finalization, and the `_ctl` control plane. Programs interact via `lembeh_handle`, passing request/response handles plus the callback table declared in `include/zprog_rt.h` and described by `normative/CLOAK_INTEGRATOR_GUIDE.md`.
 
 ## Examples
 

@@ -1134,7 +1134,7 @@ static int emit_instruction(const record_t* r,
       fprintf(out, "      if (!ctl_fn) return ZPROG_TRAP_HOST_MISSING;\n");
       fprintf(out, "      if (!zprog_bounds(state.HL, state.DE)) return ZPROG_TRAP_OOB;\n");
       fprintf(out, "      if (!zprog_bounds(state.BC, state.IX)) return ZPROG_TRAP_OOB;\n");
-      fprintf(out, "      int32_t ctl_written = ctl_fn(host_ctx, ZCAP_CTL, state.mem, ZPROG_MEM_CAP, state.HL, state.DE, state.BC, state.IX, state.A);\n");
+      fprintf(out, "      int32_t ctl_written = ctl_fn(host_ctx, state.mem, ZPROG_MEM_CAP, state.HL, state.DE, state.BC, state.IX);\n");
       fprintf(out, "      if (ctl_written < 0) return ZPROG_TRAP_HOST_FAIL;\n");
       fprintf(out, "      state.HL = ctl_written;\n");
       fprintf(out, "      pc = %zu;\n      break;\n    }\n", next_pc);

@@ -60,14 +60,12 @@ static struct host_ctx g_host = {
 /* For now, declare them as weak and they'll be linked from cloak_bench.c */
 extern void cuda_backend_init(struct cuda_backend* backend) __attribute__((weak));
 extern int32_t cloak_ctl(void* ctx,
-                         int32_t ctl_handle,
                          uint8_t* mem,
                          size_t mem_cap,
                          int32_t req_ptr,
                          int32_t req_len,
                          int32_t resp_ptr,
-                         int32_t resp_cap,
-                         int32_t timeout_ms) __attribute__((weak));
+                         int32_t resp_cap) __attribute__((weak));
 
 /* Initialize the host context (call this once) */
 void bench_init(void) {
@@ -92,14 +90,12 @@ int32_t _ctl(uint8_t* req, uint32_t req_len, uint8_t* resp, uint32_t resp_cap) {
   int32_t result = -1;
   if (cloak_ctl) {
     result = cloak_ctl(&g_host, 
-                       0,           /* ctl_handle */
                        bench_mem, 
                        sizeof(bench_mem),
                        0,           /* req at offset 0 */
                        req_len,
                        req_len,     /* resp after req */
-                       resp_cap,
-                       -1);         /* timeout */
+                       resp_cap);
   }
   
   /* Copy response out */

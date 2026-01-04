@@ -6,7 +6,33 @@
 #include <stddef.h>
 #include <stdint.h>
 
-#include "zing_abi_pack_v1/cloak_abi.h"
+/* ABI typedefs are defined here to avoid external header dependencies. */
+typedef int32_t (*zcap_alloc_fn)(void* ctx, uint8_t* mem, size_t mem_cap, int32_t size);
+typedef void (*zcap_free_fn)(void* ctx, uint8_t* mem, size_t mem_cap, int32_t ptr);
+
+typedef int32_t (*zcap_req_read_fn)(void* ctx, int32_t handle,
+                                    uint8_t* mem, size_t mem_cap,
+                                    int32_t ptr, int32_t cap);
+
+typedef int32_t (*zcap_res_write_fn)(void* ctx, int32_t handle,
+                                     uint8_t* mem, size_t mem_cap,
+                                     int32_t ptr, int32_t len);
+
+typedef void (*zcap_res_end_fn)(void* ctx, int32_t handle);
+
+typedef void (*zcap_log_fn)(void* ctx, uint8_t* mem, size_t mem_cap,
+                            int32_t topic_ptr, int32_t topic_len,
+                            int32_t msg_ptr, int32_t msg_len);
+
+typedef int32_t (*zcap_ctl_fn)(void* ctx, uint8_t* mem, size_t mem_cap,
+                               int32_t req_ptr, int32_t req_len,
+                               int32_t resp_ptr, int32_t resp_cap);
+
+enum {
+  ZCAP_IN = 0,
+  ZCAP_OUT = 1,
+  ZCAP_LOG = 2
+};
 
 typedef zcap_req_read_fn  zprog_in_fn;
 typedef zcap_res_write_fn zprog_out_fn;

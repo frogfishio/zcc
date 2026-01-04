@@ -114,16 +114,14 @@ Logs a message with topic and body from memory slices.
 #### Control Plane
 ```c
 typedef int32_t (*zprog_ctl_fn)(void* ctx,
-                                int32_t ctl_handle,
                                 uint8_t* mem,
                                 size_t mem_cap,
                                 int32_t req_ptr,
                                 int32_t req_len,
                                 int32_t resp_ptr,
-                                int32_t resp_cap,
-                                int32_t timeout_ms);
+                                int32_t resp_cap);
 ```
-Executes the `_ctl` backplane call. Returns the number of bytes written to the response buffer (or `ZCTL_*` codes on failure/timeout).
+Executes the `_ctl` backplane call. Returns the number of bytes written to the response buffer (or `-1` on failure).
 
 ### System Primitives
 ```c
@@ -137,7 +135,7 @@ struct zprog_sys {
 - **alloc_fn**: Allocates `size` bytes from heap, returns pointer or negative
 - **free_fn**: Frees memory at `ptr` (no-op in simple cloaks)
 
-These typedefs mirror the canonical `zcap_*` signatures declared in `zing_abi_pack_v1/cloak_abi.h`.
+These typedefs mirror the canonical `zcap_*` signatures in `include/zprog_rt.h` and `normative/CLOAK_INTEGRATOR_GUIDE.md`.
 
 ### Trap Codes
 - `ZPROG_TRAP_OOB = 1`: Out-of-bounds memory access
@@ -172,7 +170,7 @@ zcc supports a subset of Z80-inspired instructions:
 - `CALL _log`: Log message
 - `CALL _alloc`: Allocate memory
 - `CALL _free`: Free memory
-- `CALL _ctl`: Invoke the control plane (pass request pointer/len in `HL/DE`, response pointer/len in `BC/IX`, timeout in `A`)
+- `CALL _ctl`: Invoke the control plane (pass request pointer/len in `HL/DE`, response pointer/len in `BC/IX`)
 
 ### Directives
 - `DB bytes...`: Define byte data

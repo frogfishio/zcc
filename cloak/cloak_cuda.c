@@ -604,16 +604,12 @@ static int32_t handle_kernel_run(const zctl1_req_header* req,
 }
 
 static int32_t cloak_ctl(void* ctx,
-                         int32_t ctl_handle,
                          uint8_t* mem,
                          size_t mem_cap,
                          int32_t req_ptr,
                          int32_t req_len,
                          int32_t resp_ptr,
-                         int32_t resp_cap,
-                         int32_t timeout_ms) {
-  (void)ctl_handle;
-  (void)timeout_ms;
+                         int32_t resp_cap) {
   struct host_ctx* host = (struct host_ctx*)ctx;
   if (!mem) {
     log_host_msg(host, "_ctl missing memory pointer");

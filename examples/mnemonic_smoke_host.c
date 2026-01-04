@@ -93,23 +93,19 @@ static void host_log(void* ctx,
 }
 
 static int32_t host_ctl(void* ctx,
-                        int32_t ctl_handle,
                         uint8_t* mem,
                         size_t mem_cap,
                         int32_t req_ptr,
                         int32_t req_len,
                         int32_t resp_ptr,
-                        int32_t resp_cap,
-                        int32_t timeout_ms) {
+                        int32_t resp_cap) {
   (void)ctx;
-  (void)ctl_handle;
   (void)mem;
   (void)mem_cap;
   (void)req_ptr;
   (void)req_len;
   (void)resp_ptr;
   (void)resp_cap;
-  (void)timeout_ms;
   return -1;
 }
 
