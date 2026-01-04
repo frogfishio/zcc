@@ -1,18 +1,48 @@
-/* Standalone benchmark stub - provides _ctl by wrapping cloak_ctl */
+/* Standalone benchmark stub - provides _ctl/_in/_out by wrapping cloak cloaks */
 #include <stdint.h>
 #include <stddef.h>
 #include <stdio.h>
+#include <string.h>
+#include <stdlib.h>
+
+#if defined(ZCC_ENABLE_CUDA_RUNTIME)
+#include <cuda.h>
+#endif
 
 /* Simple memory buffer */
 static uint8_t bench_mem[2 * 1024 * 1024];
 
 /* Match the structs from cloak_cuda.c */
+#define ACCEL_MAX_HANDLES 64
+
+enum accel_handle_kind {
+  ACCEL_HANDLE_NONE = 0,
+  ACCEL_HANDLE_STREAM = 1,
+  ACCEL_HANDLE_BUFFER = 2
+};
+
+struct accel_handle {
+  int in_use;
+  enum accel_handle_kind kind;
+  size_t size;
+  size_t offset;
+  uint8_t* host_buf;
+#if defined(ZCC_ENABLE_CUDA_RUNTIME)
+  CUdeviceptr dev_ptr;
+#endif
+};
+
 struct cuda_backend {
   int initialized;
   int available;
   char last_error[256];
-  /* CUDA-specific fields omitted - will be filled by cuda_backend_init */
-  char _opaque[256];
+#if defined(ZCC_ENABLE_CUDA_RUNTIME)
+  CUcontext context;
+  CUdevice device;
+  int device_count;
+  int has_context;
+  int kernels_loaded;
+#endif
 };
 
 struct host_ctx {
@@ -21,6 +51,7 @@ struct host_ctx {
   FILE* log;
   int stdout_closed;
   struct cuda_backend backend;
+  struct accel_handle handles[ACCEL_MAX_HANDLES];
 };
 
 /* Forward declarations - these are actually static in cloak_cuda.c */
@@ -53,12 +84,23 @@ static struct host_ctx g_host = {
   .stdout_closed = 0,
 };
 
-/* The cloak functions we need are static, so we can't call them directly.
- * Instead, we'll compile cloak_cuda.c with -DBENCH_MODE which will expose them.
- */
+/* The cloak functions we need are static; cloak_bench.c redefines static to expose them. */
  
 /* For now, declare them as weak and they'll be linked from cloak_bench.c */
 extern void cuda_backend_init(struct cuda_backend* backend) __attribute__((weak));
+extern int32_t cloak_in(void* ctx,
+                        int32_t req_handle,
+                        uint8_t* mem,
+                        size_t mem_cap,
+                        int32_t ptr,
+                        int32_t cap) __attribute__((weak));
+extern int32_t cloak_out(void* ctx,
+                         int32_t res_handle,
+                         uint8_t* mem,
+                         size_t mem_cap,
+                         int32_t ptr,
+                         int32_t len) __attribute__((weak));
+extern void cloak_end(void* ctx, int32_t res_handle) __attribute__((weak));
 extern int32_t cloak_ctl(void* ctx,
                          uint8_t* mem,
                          size_t mem_cap,
@@ -69,6 +111,7 @@ extern int32_t cloak_ctl(void* ctx,
 
 /* Initialize the host context (call this once) */
 void bench_init(void) {
+  memset(&g_host, 0, sizeof(g_host));
   g_host.in = stdin;
   g_host.out = stdout;
   g_host.log = stderr;
@@ -97,6 +140,13 @@ int32_t _ctl(uint8_t* req, uint32_t req_len, uint8_t* resp, uint32_t resp_cap) {
                        req_len,     /* resp after req */
                        resp_cap);
   }
+  if (getenv("ZCC_BENCH_DEBUG")) {
+    fprintf(stderr, "[bench] _ctl result=%d resp_cap=%u req_len=%u\n",
+            result, resp_cap, req_len);
+    if (result > 0 && (uint32_t)result > resp_cap) {
+      fprintf(stderr, "[bench] _ctl result exceeds resp_cap\n");
+    }
+  }
   
   /* Copy response out */
   if (result > 0 && (uint32_t)result <= resp_cap) {
@@ -106,4 +156,34 @@ int32_t _ctl(uint8_t* req, uint32_t req_len, uint8_t* resp, uint32_t resp_cap) {
   }
   
   return result;
+}
+
+/* _in wrapper for reading from stream/buffer handles */
+int32_t _in(int32_t handle, uint8_t* dst, uint32_t cap) {
+  if (!dst || cap > sizeof(bench_mem)) return -1;
+  if (!cloak_in) return -1;
+  int32_t result = cloak_in(&g_host, handle, bench_mem, sizeof(bench_mem), 0, (int32_t)cap);
+  if (result > 0) {
+    memcpy(dst, bench_mem, (size_t)result);
+  }
+  return result;
+}
+
+/* _out wrapper for writing to buffer handles */
+int32_t _out(int32_t handle, const uint8_t* src, uint32_t len) {
+  if (!src || len > sizeof(bench_mem)) return -1;
+  if (!cloak_out) return -1;
+  memcpy(bench_mem, src, len);
+  return cloak_out(&g_host, handle, bench_mem, sizeof(bench_mem), 0, (int32_t)len);
+}
+
+/* _end wrapper for releasing handles */
+void _end(int32_t handle) {
+  if (cloak_end) {
+    if (getenv("ZCC_BENCH_DEBUG")) {
+      fprintf(stderr, "[bench] end handle=%d\n", handle);
+      fflush(stderr);
+    }
+    cloak_end(&g_host, handle);
+  }
 }

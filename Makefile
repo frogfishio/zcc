@@ -84,11 +84,11 @@ test-cuda-cloak: $(BUILD)/ctl_probe_cuda
 $(BUILD)/ctl_probe.c: examples/ctl_probe.jsonl zcc | dirs
 	./bin/zcc --output $@ < $<
 
-$(BUILD)/ctl_probe_cuda: $(BUILD)/ctl_probe.c cloak/cloak_cuda.c normative/zing_zctl1_kernel_backplane_pack_v1/c/zctl1.c | dirs cloak-cuda
-	$(CC) -Iinclude -Inormative $(BUILD)/ctl_probe.c cloak/cloak_cuda.c normative/zing_zctl1_kernel_backplane_pack_v1/c/zctl1.c -o $@ -L/usr/lib/x86_64-linux-gnu -lcuda -ldl -lpthread
+$(BUILD)/ctl_probe_cuda: $(BUILD)/ctl_probe.c cloak/cloak_cuda.c | dirs cloak-cuda
+	$(CC) -Iinclude -Inormative $(BUILD)/ctl_probe.c cloak/cloak_cuda.c -o $@ -L/usr/lib/x86_64-linux-gnu -lcuda -ldl -lpthread
 
 perf-bench: zcc | dirs cloak-cuda
-	$(CC) -DZCC_ENABLE_CUDA_RUNTIME -Iinclude -Inormative examples/perf_bench.c examples/bench_stub.c cloak/cloak_bench.c normative/zing_zctl1_kernel_backplane_pack_v1/c/zctl1.c -o $(BUILD)/perf_bench -L/usr/lib/x86_64-linux-gnu -lcuda -ldl -lpthread
+	$(CC) -DZCC_ENABLE_CUDA_RUNTIME -DCLOAK_BENCH_EXPORTS -Iinclude -Inormative examples/perf_bench.c examples/bench_stub.c cloak/cloak_bench.c -o $(BUILD)/perf_bench -L/usr/lib/x86_64-linux-gnu -lcuda -ldl -lpthread
 	@echo ""
 	@echo "Running benchmark..."
 	@$(BUILD)/perf_bench
